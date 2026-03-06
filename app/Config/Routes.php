@@ -38,3 +38,5 @@ $routes->post('C_Utility/UserGroup/update', 'C_Utility::updateUserGroup', ['filt
 $routes->post('C_Utility/UserGroup/delete', 'C_Utility::deleteUserGroup', ['filter' => 'auth']);
 $routes->get('C_Utility/UserGroup/access/(:num)', 'C_Utility::userGroupAccess/$1', ['filter' => 'auth']);
 $routes->post('C_Utility/UserGroup/access/(:num)', 'C_Utility::saveUserGroupAccess/$1', ['filter' => 'auth']);
+
+$routes->get('C_Utility/LoginHistory', 'C_Utility::loginHistoryIndex', ['filter' => 'auth']);

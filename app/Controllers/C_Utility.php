@@ -485,6 +485,34 @@ class C_Utility extends BaseController
         return redirect()->to('/C_Utility/User')->with('success', 'Password user berhasil direset.');
     }
 
+    public function loginHistoryIndex(): string
+    {
+        $db = Database::connect();
+        $histories = [];
+
+        try {
+            if (! $db->tableExists('trn_login')) {
+                session()->setFlashdata('error', 'Tabel trn_login tidak ditemukan.');
+            } else {
+                $histories = $db->table('trn_login')
+                    ->select('id, username, event_type, is_logged_in, ip_address, ip_network, user_agent, notes, created_date')
+                    ->orderBy('created_date', 'DESC')
+                    ->orderBy('id', 'DESC')
+                    ->get()
+                    ->getResultArray();
+            }
+        } catch (Throwable $e) {
+            log_message('error', 'LOGIN_HISTORY_LOAD_FAILED: {message}', ['message' => $e->getMessage()]);
+            session()->setFlashdata('error', 'Gagal memuat riwayat login.');
+        }
+
+        return view('utility/login_history', [
+            'title' => 'Login History',
+            'pageHeading' => 'Login History',
+            'histories' => $histories,
+        ]);
+    }
+
     private function isSuperAdministrator(): bool
     {
         $groupId = (int) (session('group_id') ?? 0);
