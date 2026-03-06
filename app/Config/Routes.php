@@ -40,3 +40,7 @@ $routes->get('C_Utility/UserGroup/access/(:num)', 'C_Utility::userGroupAccess/$1
 $routes->post('C_Utility/UserGroup/access/(:num)', 'C_Utility::saveUserGroupAccess/$1', ['filter' => 'auth']);
 
 $routes->get('C_Utility/LoginHistory', 'C_Utility::loginHistoryIndex', ['filter' => 'auth']);
+
+$routes->get('C_Master/KategoriTegangan', 'C_Master::kategoriTegangan', ['filter' => 'auth']);
+$routes->post('C_Master/KategoriTegangan/save', 'C_Master::saveKategoriTegangan', ['filter' => 'auth']);
+$routes->post('C_Master/KategoriTegangan/delete', 'C_Master::deleteKategoriTegangan', ['filter' => 'auth']);
