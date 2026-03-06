@@ -134,10 +134,84 @@
     <script src="<?= base_url('assets/vendor/libs/perfect-scrollbar/perfect-scrollbar.js') ?>"></script>
     <script src="<?= base_url('assets/vendor/js/menu.js') ?>"></script>
     <script src="<?= base_url('assets/js/main.js') ?>"></script>
+    <div class="modal fade" id="changePasswordModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Ganti Password</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <form action="<?= site_url('change-password') ?>" method="post" novalidate>
+                    <div class="modal-body">
+                        <?= csrf_field() ?>
+
+                        <?php if (session()->getFlashdata('password_error')): ?>
+                            <div class="alert alert-danger" role="alert"><?= esc(session()->getFlashdata('password_error')) ?></div>
+                        <?php endif; ?>
+
+                        <?php $passwordErrors = session()->getFlashdata('password_errors'); ?>
+                        <?php if (! empty($passwordErrors) && is_array($passwordErrors)): ?>
+                            <div class="alert alert-danger" role="alert">
+                                <ul class="mb-0 ps-3">
+                                    <?php foreach ($passwordErrors as $error): ?>
+                                        <li><?= esc($error) ?></li>
+                                    <?php endforeach; ?>
+                                </ul>
+                            </div>
+                        <?php endif; ?>
+
+                        <div class="mb-3">
+                            <label class="form-label" for="modal_current_password">Password Saat Ini</label>
+                            <input
+                                type="password"
+                                id="modal_current_password"
+                                name="current_password"
+                                class="form-control"
+                                required
+                                autocomplete="current-password"
+                            >
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="form-label" for="modal_new_password">Password Baru</label>
+                            <input
+                                type="password"
+                                id="modal_new_password"
+                                name="new_password"
+                                class="form-control"
+                                required
+                                autocomplete="new-password"
+                            >
+                            <div class="form-text">Minimal 8 karakter, mengandung huruf besar, huruf kecil, angka, dan simbol.</div>
+                        </div>
+
+                        <div class="mb-0">
+                            <label class="form-label" for="modal_new_password_confirmation">Konfirmasi Password Baru</label>
+                            <input
+                                type="password"
+                                id="modal_new_password_confirmation"
+                                name="new_password_confirmation"
+                                class="form-control"
+                                required
+                                autocomplete="new-password"
+                            >
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Batal</button>
+                        <button type="submit" class="btn btn-primary">
+                            <i class="ti ti-device-floppy me-1"></i> Simpan Password
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
     <script>
         (function () {
             const autoLogoutMs = <?= (int) $autoLogoutMs ?>;
+            const shouldOpenChangePasswordModal = <?= session()->getFlashdata('open_change_password_modal') ? 'true' : 'false' ?>;
 
             function showSwalLoading(title) {
                 if (!window.Swal) {
@@ -204,26 +278,9 @@
 
             function triggerAutoLogout() {
                 isAutoLoggingOut = true;
-                const logoutForm = document.querySelector('form[action$="/logout"]');
+                const logoutForm = document.getElementById('navbar-logout-form') || document.querySelector('form[action$="/logout"]');
                 if (!logoutForm) {
                     window.location.href = '<?= site_url('/') ?>';
-                    return;
-                }
-
-                if (window.Swal) {
-                    Swal.fire({
-                        icon: 'info',
-                        title: 'Sesi berakhir',
-                        text: 'Anda logout otomatis karena tidak ada aktivitas.',
-                        allowOutsideClick: false,
-                        allowEscapeKey: false,
-                        showConfirmButton: false,
-                        timer: 1200,
-                        timerProgressBar: true
-                    }).then(function () {
-                        logoutForm.submit();
-                    });
-
                     return;
                 }
 
@@ -318,6 +375,14 @@
                 });
 
                 resetIdleTimer();
+            }
+
+            if (shouldOpenChangePasswordModal) {
+                const modalElement = document.getElementById('changePasswordModal');
+                if (modalElement && window.bootstrap && typeof window.bootstrap.Modal === 'function') {
+                    const modal = new window.bootstrap.Modal(modalElement);
+                    modal.show();
+                }
             }
         })();
     </script>

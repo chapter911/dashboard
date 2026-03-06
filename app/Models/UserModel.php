@@ -13,6 +13,7 @@ class UserModel extends Model
         'username',
         'nama',
         'email',
+        'profile_photo_path',
         'password',
         'unit_id',
         'group_id',

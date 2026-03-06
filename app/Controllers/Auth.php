@@ -4,11 +4,13 @@ namespace App\Controllers;
 
 use App\Models\LoginAuditModel;
 use App\Models\UserModel;
+use CodeIgniter\HTTP\Files\UploadedFile;
 use CodeIgniter\HTTP\ResponseInterface;
 use Throwable;
 
 class Auth extends BaseController
 {
+    private const PROFILE_UPLOAD_DIR = 'uploads/profile';
     private const MAX_LOGIN_ATTEMPTS = 5;
     private const MAX_NETWORK_ATTEMPTS = 25;
     private const LOCKOUT_SECONDS = 900;
@@ -117,6 +119,7 @@ class Auth extends BaseController
             'isLoggedIn' => true,
             'username' => $user['username'],
             'nama' => $user['nama'] ?? '',
+            'profile_photo_path' => $user['profile_photo_path'] ?? null,
             'group_id' => $user['group_id'] ?? null,
             'unit_id' => $user['unit_id'] ?? null,
         ]);
@@ -138,6 +141,127 @@ class Auth extends BaseController
         session()->destroy();
 
         return redirect()->to('/')->with('success', 'Logout berhasil.');
+    }
+
+    public function profile(): ResponseInterface|string
+    {
+        $username = (string) session('username');
+        $userModel = new UserModel();
+        $user = $userModel->findByUsername($username);
+
+        if ($user === null) {
+            return redirect()->to('/dashboard')->with('error', 'Data profil tidak ditemukan.');
+        }
+
+        session()->set('profile_photo_path', $user['profile_photo_path'] ?? null);
+
+        return view('auth/profile', [
+            'title' => 'Profil Pengguna',
+            'pageHeading' => 'Profil Pengguna',
+            'user' => $user,
+        ]);
+    }
+
+    public function updateProfilePhoto()
+    {
+        $rules = [
+            'profile_photo' => 'uploaded[profile_photo]|max_size[profile_photo,2048]|is_image[profile_photo]|mime_in[profile_photo,image/png,image/jpeg,image/webp]',
+        ];
+
+        if (! $this->validate($rules)) {
+            return redirect()->to('/profile')->with('errors', $this->validator->getErrors());
+        }
+
+        $username = (string) session('username');
+        $userModel = new UserModel();
+        $user = $userModel->findByUsername($username);
+
+        if ($user === null) {
+            return redirect()->to('/dashboard')->with('error', 'Pengguna tidak ditemukan.');
+        }
+
+        $profilePhoto = $this->request->getFile('profile_photo');
+        if (! $this->hasValidUpload($profilePhoto)) {
+            return redirect()->to('/profile')->with('error', 'File foto profil tidak valid.');
+        }
+
+        try {
+            $newPath = $this->storeProfilePhoto($profilePhoto, $username);
+            $oldPath = (string) ($user['profile_photo_path'] ?? '');
+
+            $userModel->update($username, [
+                'profile_photo_path' => $newPath,
+            ]);
+
+            session()->set('profile_photo_path', $newPath);
+            $this->deleteOldProfilePhoto($oldPath, $newPath);
+        } catch (Throwable $e) {
+            log_message('error', 'AUTH_PROFILE_PHOTO_UPDATE_FAILED: {message}', ['message' => $e->getMessage()]);
+
+            return redirect()->to('/profile')->with('error', 'Gagal memperbarui foto profil.');
+        }
+
+        return redirect()->to('/profile')->with('success', 'Foto profil berhasil diperbarui.');
+    }
+
+    public function changePassword(): ResponseInterface
+    {
+        return redirect()->to('/dashboard');
+    }
+
+    public function updatePassword()
+    {
+        $rules = [
+            'current_password' => 'required|min_length[8]|max_length[255]',
+            'new_password' => 'required|min_length[8]|max_length[255]',
+            'new_password_confirmation' => 'required|matches[new_password]',
+        ];
+
+        if (! $this->validate($rules)) {
+            return redirect()->back()->withInput()->with('password_errors', $this->validator->getErrors())->with('open_change_password_modal', true);
+        }
+
+        $username = (string) session('username');
+        $currentPassword = (string) $this->request->getPost('current_password');
+        $newPassword = (string) $this->request->getPost('new_password');
+        $context = $this->getRequestContext();
+
+        $userModel = new UserModel();
+        $user = $userModel->findByUsername($username);
+
+        if ($user === null) {
+            return redirect()->back()->with('password_error', 'Pengguna tidak ditemukan.')->with('open_change_password_modal', true);
+        }
+
+        $storedPassword = (string) ($user['password'] ?? '');
+        if (! $this->verifyPasswordHashOnly($currentPassword, $storedPassword)) {
+            return redirect()->back()->withInput()->with('password_error', 'Password saat ini tidak valid.')->with('open_change_password_modal', true);
+        }
+
+        if (! $this->isStrongPassword($newPassword)) {
+            return redirect()->back()->withInput()->with(
+                'password_error',
+                'Password baru harus minimal 8 karakter dan mengandung huruf besar, huruf kecil, angka, serta simbol.'
+            )->with('open_change_password_modal', true);
+        }
+
+        if (password_verify($newPassword, $storedPassword)) {
+            return redirect()->back()->withInput()->with('password_error', 'Password baru tidak boleh sama dengan password lama.')->with('open_change_password_modal', true);
+        }
+
+        try {
+            $userModel->update($username, [
+                'password' => password_hash($newPassword, PASSWORD_DEFAULT),
+            ]);
+
+            $this->logAudit($username, 'PASSWORD_CHANGED', true, $context, 'OK');
+        } catch (Throwable $e) {
+            log_message('error', 'AUTH_PASSWORD_UPDATE_FAILED: {message}', ['message' => $e->getMessage()]);
+
+            return redirect()->back()->withInput()->with('password_error', 'Gagal memperbarui password. Silakan coba lagi.')->with('open_change_password_modal', true);
+        }
+
+        return redirect()->back()->with('success', 'Password berhasil diperbarui.');
     }
 
     private function makeUserThrottleKey(string $username, string $network, string $userAgent): string
@@ -213,6 +337,45 @@ class Auth extends BaseController
         $hasSymbol = preg_match('/[^a-zA-Z\d]/', $password) === 1;
 
         return $isLongEnough && $hasUpper && $hasLower && $hasDigit && $hasSymbol;
+    }
+
+    private function hasValidUpload(?UploadedFile $file): bool
+    {
+        return $file instanceof UploadedFile && $file->isValid() && ! $file->hasMoved();
+    }
+
+    private function storeProfilePhoto(UploadedFile $file, string $username): string
+    {
+        $targetDirectory = FCPATH . self::PROFILE_UPLOAD_DIR;
+
+        if (! is_dir($targetDirectory)) {
+            mkdir($targetDirectory, 0755, true);
+        }
+
+        $extension = strtolower((string) $file->getClientExtension());
+        $safeExtension = preg_replace('/[^a-z0-9]+/', '', $extension) ?: 'png';
+        $safeUsername = preg_replace('/[^a-z0-9_\-]+/i', '-', $username) ?: 'user';
+        $fileName = $safeUsername . '-' . date('YmdHis') . '-' . bin2hex(random_bytes(4)) . '.' . $safeExtension;
+
+        $file->move($targetDirectory, $fileName, true);
+
+        return self::PROFILE_UPLOAD_DIR . '/' . $fileName;
+    }
+
+    private function deleteOldProfilePhoto(string $oldPath, string $newPath): void
+    {
+        if ($oldPath === '' || $oldPath === $newPath) {
+            return;
+        }
+
+        if (strpos($oldPath, self::PROFILE_UPLOAD_DIR . '/') !== 0) {
+            return;
+        }
+
+        $absolutePath = FCPATH . $oldPath;
+        if (is_file($absolutePath)) {
+            @unlink($absolutePath);
+        }
     }
 
     /**
