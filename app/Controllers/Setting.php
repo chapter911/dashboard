@@ -21,14 +21,18 @@ class Setting extends BaseController
         $settingModel = new AppSettingModel();
         $appName = 'Dashboard PLN';
         $primaryColor = '#0a66c2';
+        $autoLogoutMinutes = 30;
 
         try {
             $appName = $settingModel->getValue('app_name', 'Dashboard PLN') ?? 'Dashboard PLN';
             $storedPrimaryColor = $settingModel->getValue('app_primary_color', '#0a66c2');
+            $storedAutoLogout = $settingModel->getValue('auto_logout_minutes', '30');
 
             if ($this->isValidHexColor($storedPrimaryColor)) {
                 $primaryColor = strtolower((string) $storedPrimaryColor);
             }
+
+            $autoLogoutMinutes = $this->normalizeAutoLogoutMinutes($storedAutoLogout, 30);
         } catch (Throwable $e) {
             log_message('warning', 'SETTING_INDEX_LOAD_FAILED: {message}', ['message' => $e->getMessage()]);
         }
@@ -40,6 +44,7 @@ class Setting extends BaseController
             'formData' => [
                 'app_name' => old('app_name', $appName),
                 'app_primary_color' => old('app_primary_color', $primaryColor),
+                'auto_logout_minutes' => old('auto_logout_minutes', (string) $autoLogoutMinutes),
             ],
         ]);
     }
@@ -54,6 +59,7 @@ class Setting extends BaseController
         $rules = [
             'app_name' => 'required|min_length[3]|max_length[100]',
             'app_primary_color' => 'required|regex_match[/^#[0-9a-fA-F]{6}$/]',
+            'auto_logout_minutes' => 'required|integer|greater_than_equal_to[1]|less_than_equal_to[1440]',
             'app_logo' => 'if_exist|max_size[app_logo,2048]|is_image[app_logo]|mime_in[app_logo,image/png,image/jpeg,image/webp]',
             'login_background' => 'if_exist|max_size[login_background,4096]|is_image[login_background]|mime_in[login_background,image/png,image/jpeg,image/webp]',
         ];
@@ -68,6 +74,11 @@ class Setting extends BaseController
         try {
             $settingModel->setValue('app_name', trim((string) $this->request->getPost('app_name')), $updatedBy);
             $settingModel->setValue('app_primary_color', strtolower((string) $this->request->getPost('app_primary_color')), $updatedBy);
+            $settingModel->setValue(
+                'auto_logout_minutes',
+                (string) $this->normalizeAutoLogoutMinutes($this->request->getPost('auto_logout_minutes'), 30),
+                $updatedBy
+            );
 
             $logoFile = $this->request->getFile('app_logo');
             if ($this->hasValidUpload($logoFile)) {
@@ -196,6 +207,27 @@ class Setting extends BaseController
     private function isValidHexColor(?string $color): bool
     {
         return is_string($color) && preg_match('/^#[0-9a-fA-F]{6}$/', $color) === 1;
+    }
+
+    /**
+     * @param mixed $value
+     */
+    private function normalizeAutoLogoutMinutes($value, int $fallback): int
+    {
+        if (! is_numeric($value)) {
+            return $fallback;
+        }
+
+        $minutes = (int) $value;
+        if ($minutes < 1) {
+            return 1;
+        }
+
+        if ($minutes > 1440) {
+            return 1440;
+        }
+
+        return $minutes;
     }
 
     /**

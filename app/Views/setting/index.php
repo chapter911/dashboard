@@ -108,6 +108,22 @@ $loginBackgroundUrl = $branding['login_background_url'] ?? null;
                         <div class="form-text">Kosongkan jika tidak ingin mengganti background login. Maksimal 4 MB.</div>
                     </div>
 
+                    <div class="mb-3">
+                        <label class="form-label" for="auto_logout_minutes">Timer Logout Otomatis (menit)</label>
+                        <input
+                            type="number"
+                            id="auto_logout_minutes"
+                            name="auto_logout_minutes"
+                            class="form-control"
+                            min="1"
+                            max="1440"
+                            step="1"
+                            value="<?= esc($formData['auto_logout_minutes'] ?? '30') ?>"
+                            required
+                        >
+                        <div class="form-text">Pengguna akan otomatis logout jika tidak ada aktivitas sesuai durasi ini.</div>
+                    </div>
+
                     <button class="btn btn-primary" type="submit">
                         <i class="ti ti-device-floppy me-1"></i> Simpan Setting
                     </button>
@@ -157,6 +173,17 @@ $loginBackgroundUrl = $branding['login_background_url'] ?? null;
                 <?php else: ?>
                     <div class="border rounded p-3 text-muted">Belum ada background login custom.</div>
                 <?php endif; ?>
+            </div>
+        </div>
+
+        <div class="card mt-4">
+            <div class="card-header">
+                <h6 class="mb-0">Timer Logout Aktif</h6>
+            </div>
+            <div class="card-body">
+                <span class="badge bg-label-primary">
+                    <?= esc((string) ($formData['auto_logout_minutes'] ?? '30')) ?> menit
+                </span>
             </div>
         </div>
     </div>

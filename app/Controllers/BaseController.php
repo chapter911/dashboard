@@ -58,6 +58,7 @@ abstract class BaseController extends Controller
             'login_background_url' => null,
             'app_primary_color' => '#0a66c2',
             'app_primary_color_deep' => '#074c91',
+            'auto_logout_minutes' => 30,
         ];
 
         try {
@@ -66,6 +67,7 @@ abstract class BaseController extends Controller
             $logoPath = $settingModel->getValue('app_logo_path');
             $backgroundPath = $settingModel->getValue('login_background_path');
             $primaryColor = $settingModel->getValue('app_primary_color', '#0a66c2');
+            $autoLogoutMinutes = $settingModel->getValue('auto_logout_minutes', '30');
 
             if (is_string($appName) && trim($appName) !== '') {
                 $branding['app_name'] = trim($appName);
@@ -85,6 +87,19 @@ abstract class BaseController extends Controller
                 $normalizedColor = strtolower((string) $primaryColor);
                 $branding['app_primary_color'] = $normalizedColor;
                 $branding['app_primary_color_deep'] = $this->darkenHexColor($normalizedColor, 24);
+            }
+
+            if (is_numeric($autoLogoutMinutes)) {
+                $normalizedMinutes = (int) $autoLogoutMinutes;
+                if ($normalizedMinutes < 1) {
+                    $normalizedMinutes = 1;
+                }
+
+                if ($normalizedMinutes > 1440) {
+                    $normalizedMinutes = 1440;
+                }
+
+                $branding['auto_logout_minutes'] = $normalizedMinutes;
             }
         } catch (Throwable $e) {
             // Keep fallback defaults when table is not migrated yet.
