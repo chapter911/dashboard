@@ -400,6 +400,22 @@ $allSeeders = is_array($seederOptions['all'] ?? null) ? $seederOptions['all'] : 
             }
         }
 
+        function getCsrfEntry(formElement) {
+            if (!formElement) {
+                return null;
+            }
+
+            const hiddenInput = formElement.querySelector('input[type="hidden"]');
+            if (!hiddenInput || !hiddenInput.name) {
+                return null;
+            }
+
+            return {
+                name: hiddenInput.name,
+                value: hiddenInput.value || ''
+            };
+        }
+
         function renderSeederOptions(options) {
             if (!seederSelect || !options || typeof options !== 'object') {
                 return;
@@ -476,6 +492,11 @@ $allSeeders = is_array($seederOptions['all'] ?? null) ? $seederOptions['all'] : 
             }
 
             const payload = new FormData(maintenanceForm);
+            const csrfEntry = getCsrfEntry(maintenanceForm);
+
+            if (csrfEntry && csrfEntry.name) {
+                payload.set(csrfEntry.name, csrfEntry.value);
+            }
 
             if (extraData && typeof extraData === 'object') {
                 Object.keys(extraData).forEach(function (key) {
@@ -491,14 +512,22 @@ $allSeeders = is_array($seederOptions['all'] ?? null) ? $seederOptions['all'] : 
                     method: 'POST',
                     body: payload,
                     headers: {
-                        'X-Requested-With': 'XMLHttpRequest'
+                        'X-Requested-With': 'XMLHttpRequest',
+                        'X-CSRF-TOKEN': csrfEntry ? csrfEntry.value : ''
                     }
                 });
 
-                const data = await response.json();
+                const contentType = response.headers.get('content-type') || '';
+                const data = contentType.indexOf('application/json') !== -1
+                    ? await response.json()
+                    : { ok: false, message: await response.text() };
                 updateCsrfToken(data.csrfToken, data.csrfHash);
 
                 if (!response.ok || !data.ok) {
+                    if (response.status === 403) {
+                        throw new Error('Token CSRF tidak valid atau kadaluarsa. Muat ulang halaman lalu coba lagi.');
+                    }
+
                     throw new Error((data && data.message) ? data.message : 'Perintah gagal dijalankan.');
                 }
 
