@@ -130,3 +130,4 @@ _modules/*
 /phpunit*.xml
 SSH ACCESS.md
 perintah.sql
+public/uploads/profile/
