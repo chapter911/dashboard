@@ -44,3 +44,14 @@ $routes->get('C_Utility/LoginHistory', 'C_Utility::loginHistoryIndex', ['filter'
 $routes->get('C_Master/KategoriTegangan', 'C_Master::kategoriTegangan', ['filter' => 'auth']);
 $routes->post('C_Master/KategoriTegangan/save', 'C_Master::saveKategoriTegangan', ['filter' => 'auth']);
 $routes->post('C_Master/KategoriTegangan/delete', 'C_Master::deleteKategoriTegangan', ['filter' => 'auth']);
+
+$routes->get('C_Laporan', 'C_Laporan::index', ['filter' => 'auth']);
+$routes->get('C_Laporan/Index', 'C_Laporan::index', ['filter' => 'auth']);
+$routes->get('C_Laporan/Harian', 'C_Laporan::harian', ['filter' => 'auth']);
+$routes->post('C_Laporan/Harian/import', 'C_Laporan::importHarian', ['filter' => 'auth']);
+$routes->get('C_Laporan/Target', 'C_Laporan::target', ['filter' => 'auth']);
+$routes->post('C_Laporan/Target/save', 'C_Laporan::saveTarget', ['filter' => 'auth']);
+$routes->post('C_Laporan/Target/delete', 'C_Laporan::deleteTarget', ['filter' => 'auth']);
+$routes->get('C_Laporan/Realisasi', 'C_Laporan::realisasi', ['filter' => 'auth']);
+$routes->get('C_Laporan/Saldo', 'C_Laporan::saldo', ['filter' => 'auth']);
+$routes->post('C_Laporan/Saldo/update', 'C_Laporan::updateSaldo', ['filter' => 'auth']);
