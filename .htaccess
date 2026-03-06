@@ -1,10 +1,9 @@
+# Redirect all requests to the public folder
+
 <IfModule mod_rewrite.c>
     RewriteEngine On
+    RewriteBase /
 
-    # Keep ACME challenge path reachable for SSL renewals.
-    RewriteRule ^\.well-known/ - [L]
-
-    # Skip rewrite if already requesting the public folder directly.
     RewriteCond %{REQUEST_URI} !^/public/
     RewriteRule ^(.*)$ public/$1 [L]
 

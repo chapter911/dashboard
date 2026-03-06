@@ -18,7 +18,9 @@ class Auth extends BaseController
             return redirect()->to('/dashboard');
         }
 
-        return view('auth/login');
+        return view('auth/login', [
+            'title' => 'Login Dashboard PLN',
+        ]);
     }
 
     public function login()

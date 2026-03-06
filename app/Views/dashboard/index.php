@@ -1,76 +1,52 @@
-<!doctype html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Dashboard PLN</title>
-    <style>
-        body {
-            margin: 0;
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background: #f2f7fb;
-            color: #123;
-        }
+<?= $this->extend('layouts/main') ?>
 
-        .container {
-            max-width: 980px;
-            margin: 28px auto;
-            padding: 0 16px;
-        }
-
-        .card {
-            background: #fff;
-            border-radius: 14px;
-            padding: 22px;
-            box-shadow: 0 10px 28px rgba(10, 30, 60, 0.1);
-        }
-
-        h1 {
-            margin: 0 0 8px;
-            font-size: 1.5rem;
-        }
-
-        p {
-            margin: 6px 0;
-        }
-
-        .topbar {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 18px;
-            gap: 12px;
-            flex-wrap: wrap;
-        }
-
-        .btn {
-            border: 0;
-            background: #c62828;
-            color: #fff;
-            padding: 10px 14px;
-            border-radius: 10px;
-            font-weight: 600;
-            cursor: pointer;
-        }
-    </style>
-</head>
-<body>
-    <div class="container">
-        <div class="topbar">
-            <h1>Dashboard PLN</h1>
-            <form action="<?= site_url('logout') ?>" method="post">
-                <?= csrf_field() ?>
-                <button class="btn" type="submit">Logout</button>
-            </form>
-        </div>
-
+<?= $this->section('content') ?>
+<div class="row g-4">
+    <div class="col-12 col-md-6 col-xl-3">
         <div class="card">
-            <p><strong>Selamat datang, <?= esc($user['nama'] ?: $user['username']) ?></strong></p>
-            <p>Username: <?= esc($user['username']) ?></p>
-            <p>Group ID: <?= esc($user['group_id']) ?></p>
-            <p>Unit ID: <?= esc($user['unit_id']) ?></p>
-            <p>Halaman ini adalah placeholder dashboard setelah login berhasil.</p>
+            <div class="card-body">
+                <span class="text-heading fw-medium d-block mb-1">Nama</span>
+                <h4 class="card-title mb-0"><?= esc($user['nama'] ?: $user['username']) ?></h4>
+            </div>
         </div>
     </div>
-</body>
-</html>
+
+    <div class="col-12 col-md-6 col-xl-3">
+        <div class="card">
+            <div class="card-body">
+                <span class="text-heading fw-medium d-block mb-1">Username</span>
+                <h4 class="card-title mb-0"><?= esc($user['username']) ?></h4>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-12 col-md-6 col-xl-3">
+        <div class="card">
+            <div class="card-body">
+                <span class="text-heading fw-medium d-block mb-1">Group ID</span>
+                <h4 class="card-title mb-0"><?= esc((string) $user['group_id']) ?></h4>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-12 col-md-6 col-xl-3">
+        <div class="card">
+            <div class="card-body">
+                <span class="text-heading fw-medium d-block mb-1">Unit ID</span>
+                <h4 class="card-title mb-0"><?= esc((string) $user['unit_id']) ?></h4>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="card-title mb-0">Ringkasan</h5>
+            </div>
+            <div class="card-body">
+                <p class="mb-0">Dashboard sudah menggunakan layout utama Vuexy. Halaman modul berikutnya bisa langsung memakai layout ini dengan <code>$this->extend('layouts/main')</code>.</p>
+            </div>
+        </div>
+    </div>
+</div>
+<?= $this->endSection() ?>
