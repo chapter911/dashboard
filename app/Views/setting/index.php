@@ -7,6 +7,10 @@ $appNameCurrent = $branding['app_name'] ?? 'Dashboard PLN';
 $primaryColorCurrent = $branding['app_primary_color'] ?? '#0a66c2';
 $logoUrl = $branding['app_logo_url'] ?? null;
 $loginBackgroundUrl = $branding['login_background_url'] ?? null;
+$canRunMaintenanceTools = (bool) ($canRunMaintenanceTools ?? false);
+$seederOptions = is_array($seederOptions ?? null) ? $seederOptions : ['pending' => [], 'all' => []];
+$pendingSeeders = is_array($seederOptions['pending'] ?? null) ? $seederOptions['pending'] : [];
+$allSeeders = is_array($seederOptions['all'] ?? null) ? $seederOptions['all'] : [];
 ?>
 
 <div class="row">
@@ -187,7 +191,65 @@ $loginBackgroundUrl = $branding['login_background_url'] ?? null;
             </div>
         </div>
 
-        <?php if (ENVIRONMENT === 'development'): ?>
+        <?php if ($canRunMaintenanceTools): ?>
+        <div class="card mt-4">
+            <div class="card-header">
+                <h6 class="mb-0">Tools Maintenance</h6>
+            </div>
+            <div class="card-body">
+                <form id="maintenanceToolForm" novalidate>
+                    <?= csrf_field() ?>
+
+                    <div class="d-grid gap-2 mb-3">
+                        <button type="button" class="btn btn-outline-primary" id="btnRunMigrate">
+                            <i class="ti ti-database-export me-1"></i> Jalankan php spark migrate
+                        </button>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label" for="seeder_class">Seeder Class</label>
+                        <select id="seeder_class" name="seeder_class" class="form-select">
+                            <?php if ($pendingSeeders !== []): ?>
+                                <optgroup label="Perlu Dijalankan / Diperbarui">
+                                    <?php foreach ($pendingSeeders as $seed): ?>
+                                        <option value="<?= esc((string) ($seed['class'] ?? '')) ?>">
+                                            <?= esc((string) ($seed['label'] ?? ($seed['class'] ?? 'Seeder'))) ?>
+                                        </option>
+                                    <?php endforeach; ?>
+                                </optgroup>
+                            <?php endif; ?>
+
+                            <?php if ($allSeeders !== []): ?>
+                                <optgroup label="Semua Seeder">
+                                    <?php foreach ($allSeeders as $seed): ?>
+                                        <option value="<?= esc((string) ($seed['class'] ?? '')) ?>">
+                                            <?= esc((string) ($seed['label'] ?? ($seed['class'] ?? 'Seeder'))) ?>
+                                        </option>
+                                    <?php endforeach; ?>
+                                </optgroup>
+                            <?php else: ?>
+                                <option value="">Seeder tidak ditemukan</option>
+                            <?php endif; ?>
+                        </select>
+                        <div class="form-text">Dropdown memprioritaskan seeder yang belum dijalankan atau perlu diperbarui.</div>
+                    </div>
+
+                    <div class="d-grid gap-2">
+                        <button type="button" class="btn btn-outline-primary" id="btnRunSeeder">
+                            <i class="ti ti-playstation-circle me-1"></i> Jalankan php spark db:seed
+                        </button>
+                    </div>
+                </form>
+
+                <div class="mt-3 d-none" id="commandOutputWrapper">
+                    <div class="small text-muted mb-1" id="commandStatusText">Menjalankan perintah...</div>
+                    <pre id="commandOutput" class="bg-light border rounded p-2 mb-0" style="max-height:220px;overflow:auto;white-space:pre-wrap;"></pre>
+                </div>
+            </div>
+        </div>
+        <?php endif; ?>
+
+        <?php if (ENVIRONMENT === 'development' && $canRunMaintenanceTools): ?>
         <div class="card mt-4">
             <div class="card-header">
                 <h6 class="mb-0">Sinkronisasi Data Production -> Development</h6>
@@ -272,6 +334,13 @@ $loginBackgroundUrl = $branding['login_background_url'] ?? null;
         const syncPercentText = document.getElementById('syncPercentText');
         const syncStatusText = document.getElementById('syncStatusText');
         const syncButton = document.getElementById('btnStartSync');
+        const maintenanceForm = document.getElementById('maintenanceToolForm');
+        const btnRunMigrate = document.getElementById('btnRunMigrate');
+        const btnRunSeeder = document.getElementById('btnRunSeeder');
+        const commandOutputWrapper = document.getElementById('commandOutputWrapper');
+        const commandStatusText = document.getElementById('commandStatusText');
+        const commandOutput = document.getElementById('commandOutput');
+        const seederSelect = document.getElementById('seeder_class');
 
         function updateCsrfToken(token, hash) {
             if (!token || !hash || !syncForm) {
@@ -281,6 +350,168 @@ $loginBackgroundUrl = $branding['login_background_url'] ?? null;
             const csrfInput = syncForm.querySelector('input[name="' + token + '"]');
             if (csrfInput) {
                 csrfInput.value = hash;
+            }
+
+            if (maintenanceForm) {
+                const maintenanceCsrf = maintenanceForm.querySelector('input[name="' + token + '"]');
+                if (maintenanceCsrf) {
+                    maintenanceCsrf.value = hash;
+                }
+            }
+        }
+
+        function setCommandState(statusText, outputText) {
+            if (commandOutputWrapper) {
+                commandOutputWrapper.classList.remove('d-none');
+            }
+
+            if (commandStatusText) {
+                commandStatusText.textContent = statusText;
+            }
+
+            if (commandOutput) {
+                commandOutput.textContent = outputText || '-';
+            }
+        }
+
+        function setCommandButtonsDisabled(disabled) {
+            if (btnRunMigrate) {
+                btnRunMigrate.disabled = disabled;
+            }
+
+            if (btnRunSeeder) {
+                btnRunSeeder.disabled = disabled;
+            }
+
+            if (seederSelect) {
+                seederSelect.disabled = disabled;
+            }
+        }
+
+        function renderSeederOptions(options) {
+            if (!seederSelect || !options || typeof options !== 'object') {
+                return;
+            }
+
+            const pending = Array.isArray(options.pending) ? options.pending : [];
+            const all = Array.isArray(options.all) ? options.all : [];
+            const current = String(seederSelect.value || '');
+
+            seederSelect.innerHTML = '';
+
+            function appendGroup(label, rows) {
+                if (!Array.isArray(rows) || rows.length === 0) {
+                    return;
+                }
+
+                const group = document.createElement('optgroup');
+                group.label = label;
+
+                rows.forEach(function (row) {
+                    const option = document.createElement('option');
+                    option.value = String(row.class || '');
+                    option.textContent = String(row.label || row.class || 'Seeder');
+                    group.appendChild(option);
+                });
+
+                seederSelect.appendChild(group);
+            }
+
+            appendGroup('Perlu Dijalankan / Diperbarui', pending);
+            appendGroup('Semua Seeder', all);
+
+            if (!seederSelect.options.length) {
+                const emptyOption = document.createElement('option');
+                emptyOption.value = '';
+                emptyOption.textContent = 'Seeder tidak ditemukan';
+                seederSelect.appendChild(emptyOption);
+            }
+
+            if (current !== '') {
+                seederSelect.value = current;
+            }
+
+            if (seederSelect.value === '' && seederSelect.options.length > 0) {
+                seederSelect.selectedIndex = 0;
+            }
+        }
+
+        async function refreshSeederOptions() {
+            try {
+                const response = await fetch('<?= site_url('setting/application/tools/seeders') ?>', {
+                    method: 'GET',
+                    headers: {
+                        'X-Requested-With': 'XMLHttpRequest'
+                    }
+                });
+
+                const data = await response.json();
+                updateCsrfToken(data.csrfToken, data.csrfHash);
+
+                if (!response.ok || !data.ok) {
+                    return;
+                }
+
+                renderSeederOptions(data.options || {});
+            } catch (error) {
+                // Keep existing options when refresh fails.
+            }
+        }
+
+        async function runMaintenanceCommand(endpoint, extraData) {
+            if (!maintenanceForm) {
+                return;
+            }
+
+            const payload = new FormData(maintenanceForm);
+
+            if (extraData && typeof extraData === 'object') {
+                Object.keys(extraData).forEach(function (key) {
+                    payload.set(key, extraData[key]);
+                });
+            }
+
+            setCommandButtonsDisabled(true);
+            setCommandState('Menjalankan perintah...', 'Mohon tunggu...');
+
+            try {
+                const response = await fetch(endpoint, {
+                    method: 'POST',
+                    body: payload,
+                    headers: {
+                        'X-Requested-With': 'XMLHttpRequest'
+                    }
+                });
+
+                const data = await response.json();
+                updateCsrfToken(data.csrfToken, data.csrfHash);
+
+                if (!response.ok || !data.ok) {
+                    throw new Error((data && data.message) ? data.message : 'Perintah gagal dijalankan.');
+                }
+
+                setCommandState(data.message || 'Perintah berhasil dijalankan.', data.output || '(Tanpa output)');
+
+                if (endpoint.indexOf('/tools/seed') !== -1) {
+                    if (data.seederOptions) {
+                        renderSeederOptions(data.seederOptions);
+                    } else {
+                        refreshSeederOptions();
+                    }
+                }
+            } catch (error) {
+                const message = error && error.message ? error.message : 'Terjadi kesalahan saat menjalankan perintah.';
+                setCommandState('Perintah gagal.', message);
+
+                if (window.Swal) {
+                    Swal.fire({
+                        icon: 'error',
+                        title: 'Eksekusi gagal',
+                        text: message
+                    });
+                }
+            } finally {
+                setCommandButtonsDisabled(false);
             }
         }
 
@@ -402,6 +633,35 @@ $loginBackgroundUrl = $branding['login_background_url'] ?? null;
 
         if (syncForm) {
             syncForm.addEventListener('submit', startProductionSync);
+        }
+
+        if (btnRunMigrate) {
+            btnRunMigrate.addEventListener('click', function () {
+                runMaintenanceCommand('<?= site_url('setting/application/tools/migrate') ?>');
+            });
+        }
+
+        if (btnRunSeeder) {
+            btnRunSeeder.addEventListener('click', function () {
+                const seederInput = document.getElementById('seeder_class');
+                const seederName = seederInput ? String(seederInput.value || '').trim() : '';
+
+                if (seederName === '') {
+                    if (window.Swal) {
+                        Swal.fire({
+                            icon: 'warning',
+                            title: 'Seeder belum diisi',
+                            text: 'Masukkan nama class seeder terlebih dahulu.'
+                        });
+                    }
+
+                    return;
+                }
+
+                runMaintenanceCommand('<?= site_url('setting/application/tools/seed') ?>', {
+                    seeder_class: seederName
+                });
+            });
         }
     })();
 </script>

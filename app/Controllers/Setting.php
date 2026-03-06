@@ -13,6 +13,7 @@ class Setting extends BaseController
     private const BRANDING_UPLOAD_DIR = 'uploads/branding';
     private const SYNC_STATE_KEY = 'prod_sync_state';
     private const SYNC_BATCH_SIZE = 500;
+    private const SEEDER_RUNS_TABLE = 'seeder_runs';
 
     public function index(): string
     {
@@ -44,6 +45,8 @@ class Setting extends BaseController
             'title' => 'Setting Aplikasi',
             'pageHeading' => 'Setting Aplikasi',
             'activeSettingTab' => 'application',
+            'canRunMaintenanceTools' => $this->canRunMaintenanceTools(),
+            'seederOptions' => $this->getSeederOptionsPayload(),
             'formData' => [
                 'app_name' => old('app_name', $appName),
                 'app_primary_color' => old('app_primary_color', $primaryColor),
@@ -181,6 +184,15 @@ class Setting extends BaseController
             ])->setStatusCode(403);
         }
 
+        if (! $this->canRunMaintenanceTools()) {
+            return $this->response->setJSON([
+                'ok' => false,
+                'message' => 'Akses ditolak. Hanya admin yang dapat menjalankan fitur ini.',
+                'csrfToken' => csrf_token(),
+                'csrfHash' => csrf_hash(),
+            ])->setStatusCode(403);
+        }
+
         $rules = [
             'source_host' => 'required|max_length[190]',
             'source_port' => 'permit_empty|integer|greater_than_equal_to[1]|less_than_equal_to[65535]',
@@ -289,6 +301,15 @@ class Setting extends BaseController
             return $this->response->setJSON([
                 'ok' => false,
                 'message' => 'Fitur sinkronisasi hanya tersedia di environment development.',
+                'csrfToken' => csrf_token(),
+                'csrfHash' => csrf_hash(),
+            ])->setStatusCode(403);
+        }
+
+        if (! $this->canRunMaintenanceTools()) {
+            return $this->response->setJSON([
+                'ok' => false,
+                'message' => 'Akses ditolak. Hanya admin yang dapat menjalankan fitur ini.',
                 'csrfToken' => csrf_token(),
                 'csrfHash' => csrf_hash(),
             ])->setStatusCode(403);
@@ -420,6 +441,105 @@ class Setting extends BaseController
                 'csrfHash' => csrf_hash(),
             ])->setStatusCode(500);
         }
+    }
+
+    public function runMigrateCommand()
+    {
+        if (! $this->canRunMaintenanceTools()) {
+            return $this->response->setJSON([
+                'ok' => false,
+                'message' => 'Anda tidak memiliki hak akses untuk menjalankan command maintenance.',
+                'output' => '',
+                'csrfToken' => csrf_token(),
+                'csrfHash' => csrf_hash(),
+            ])->setStatusCode(403);
+        }
+
+        $result = $this->executeSparkCommand('migrate --all');
+
+        return $this->response->setJSON([
+            'ok' => $result['ok'],
+            'message' => $result['message'],
+            'output' => $result['output'],
+            'csrfToken' => csrf_token(),
+            'csrfHash' => csrf_hash(),
+        ])->setStatusCode($result['ok'] ? 200 : 500);
+    }
+
+    public function runSeederCommand()
+    {
+        if (! $this->canRunMaintenanceTools()) {
+            return $this->response->setJSON([
+                'ok' => false,
+                'message' => 'Anda tidak memiliki hak akses untuk menjalankan command maintenance.',
+                'output' => '',
+                'csrfToken' => csrf_token(),
+                'csrfHash' => csrf_hash(),
+            ])->setStatusCode(403);
+        }
+
+        $seeder = trim((string) $this->request->getPost('seeder_class'));
+
+        $availableSeeders = $this->discoverSeederFiles();
+        if (! isset($availableSeeders[$seeder])) {
+            return $this->response->setJSON([
+                'ok' => false,
+                'message' => 'Seeder tidak ditemukan di app/Database/Seeds.',
+                'output' => '',
+                'seederOptions' => $this->getSeederOptionsPayload(),
+                'csrfToken' => csrf_token(),
+                'csrfHash' => csrf_hash(),
+            ])->setStatusCode(422);
+        }
+
+        if ($seeder === '' || preg_match('/^[A-Za-z_\\\\][A-Za-z0-9_\\\\]*$/', $seeder) !== 1) {
+            return $this->response->setJSON([
+                'ok' => false,
+                'message' => 'Nama class seeder tidak valid.',
+                'output' => '',
+                'seederOptions' => $this->getSeederOptionsPayload(),
+                'csrfToken' => csrf_token(),
+                'csrfHash' => csrf_hash(),
+            ])->setStatusCode(422);
+        }
+
+        $result = $this->executeSparkCommand('db:seed ' . escapeshellarg($seeder));
+        $this->recordSeederRun(
+            $seeder,
+            (string) ($availableSeeders[$seeder]['hash'] ?? ''),
+            $result['ok'] ? 'success' : 'failed',
+            $result['output']
+        );
+
+        return $this->response->setJSON([
+            'ok' => $result['ok'],
+            'message' => $result['message'],
+            'output' => $result['output'],
+            'seederOptions' => $this->getSeederOptionsPayload(),
+            'csrfToken' => csrf_token(),
+            'csrfHash' => csrf_hash(),
+        ])->setStatusCode($result['ok'] ? 200 : 500);
+    }
+
+    public function listSeederOptions()
+    {
+        if (! $this->canRunMaintenanceTools()) {
+            return $this->response->setJSON([
+                'ok' => false,
+                'message' => 'Akses ditolak. Hanya admin yang dapat melihat daftar seeder maintenance.',
+                'options' => ['pending' => [], 'all' => []],
+                'csrfToken' => csrf_token(),
+                'csrfHash' => csrf_hash(),
+            ])->setStatusCode(403);
+        }
+
+        return $this->response->setJSON([
+            'ok' => true,
+            'message' => 'Daftar seeder berhasil dimuat.',
+            'options' => $this->getSeederOptionsPayload(),
+            'csrfToken' => csrf_token(),
+            'csrfHash' => csrf_hash(),
+        ]);
     }
 
     private function hasValidUpload(?UploadedFile $file): bool
@@ -596,5 +716,171 @@ class Setting extends BaseController
         }
 
         return min(100, round(($tableIndex / $totalTables) * 100, 2));
+    }
+
+    private function canRunMaintenanceTools(): bool
+    {
+        return (int) session('group_id') === 1;
+    }
+
+    /**
+     * @return array{pending:array<int,array<string,string>>,all:array<int,array<string,string>>}
+     */
+    private function getSeederOptionsPayload(): array
+    {
+        if (! $this->canRunMaintenanceTools()) {
+            return ['pending' => [], 'all' => []];
+        }
+
+        $seederFiles = $this->discoverSeederFiles();
+        $runMap = $this->getSeederRunMap();
+
+        $pending = [];
+        $all = [];
+
+        foreach ($seederFiles as $className => $meta) {
+            $hash = (string) ($meta['hash'] ?? '');
+            $history = $runMap[$className] ?? null;
+            $lastHash = is_array($history) ? (string) ($history['file_hash'] ?? '') : '';
+
+            $status = 'up-to-date';
+            $statusLabel = 'Sudah terbaru';
+
+            if ($history === null) {
+                $status = 'new';
+                $statusLabel = 'Belum dijalankan';
+            } elseif ($lastHash !== '' && $lastHash !== $hash) {
+                $status = 'updated';
+                $statusLabel = 'Perlu diperbarui';
+            }
+
+            $row = [
+                'class' => $className,
+                'status' => $status,
+                'label' => $className . ' - ' . $statusLabel,
+            ];
+
+            $all[] = $row;
+
+            if ($status === 'new' || $status === 'updated') {
+                $pending[] = $row;
+            }
+        }
+
+        return [
+            'pending' => $pending,
+            'all' => $all,
+        ];
+    }
+
+    /**
+     * @return array<string,array{path:string,hash:string}>
+     */
+    private function discoverSeederFiles(): array
+    {
+        $pattern = APPPATH . 'Database/Seeds/*.php';
+        $files = glob($pattern) ?: [];
+        sort($files);
+
+        $seeders = [];
+        foreach ($files as $filePath) {
+            $className = pathinfo($filePath, PATHINFO_FILENAME);
+            if ($className === '') {
+                continue;
+            }
+
+            $hash = (string) @sha1_file($filePath);
+            $seeders[$className] = [
+                'path' => $filePath,
+                'hash' => $hash,
+            ];
+        }
+
+        return $seeders;
+    }
+
+    /**
+     * @return array<string,array<string,mixed>>
+     */
+    private function getSeederRunMap(): array
+    {
+        $db = db_connect();
+        if (! $db->tableExists(self::SEEDER_RUNS_TABLE)) {
+            return [];
+        }
+
+        $rows = $db->table(self::SEEDER_RUNS_TABLE)
+            ->select('seeder_class, file_hash, run_count, last_status, last_run_at')
+            ->get()
+            ->getResultArray();
+
+        $map = [];
+        foreach ($rows as $row) {
+            $className = (string) ($row['seeder_class'] ?? '');
+            if ($className === '') {
+                continue;
+            }
+
+            $map[$className] = $row;
+        }
+
+        return $map;
+    }
+
+    private function recordSeederRun(string $className, string $hash, string $status, string $output): void
+    {
+        $db = db_connect();
+        if (! $db->tableExists(self::SEEDER_RUNS_TABLE)) {
+            return;
+        }
+
+        $existing = $db->table(self::SEEDER_RUNS_TABLE)
+            ->select('run_count')
+            ->where('seeder_class', $className)
+            ->get()
+            ->getRowArray();
+
+        $runCount = (int) ($existing['run_count'] ?? 0) + 1;
+        $payload = [
+            'seeder_class' => $className,
+            'file_hash' => $hash,
+            'run_count' => $runCount,
+            'last_status' => $status,
+            'last_output' => mb_substr($output, 0, 65000),
+            'last_run_at' => date('Y-m-d H:i:s'),
+            'updated_by' => (string) session('username'),
+        ];
+
+        if ($existing === null) {
+            $db->table(self::SEEDER_RUNS_TABLE)->insert($payload);
+            return;
+        }
+
+        $db->table(self::SEEDER_RUNS_TABLE)
+            ->where('seeder_class', $className)
+            ->update($payload);
+    }
+
+    /**
+     * @return array{ok:bool,message:string,output:string}
+     */
+    private function executeSparkCommand(string $sparkArguments): array
+    {
+        $phpBinary = PHP_BINARY !== '' ? PHP_BINARY : 'php';
+        $sparkPath = ROOTPATH . 'spark';
+        $command = escapeshellarg($phpBinary) . ' ' . escapeshellarg($sparkPath) . ' ' . $sparkArguments;
+
+        $output = [];
+        $exitCode = 1;
+
+        exec($command . ' 2>&1', $output, $exitCode);
+
+        $commandOutput = trim(implode("\n", $output));
+
+        return [
+            'ok' => $exitCode === 0,
+            'message' => $exitCode === 0 ? 'Perintah berhasil dijalankan.' : 'Perintah gagal dijalankan.',
+            'output' => $commandOutput,
+        ];
     }
 }
