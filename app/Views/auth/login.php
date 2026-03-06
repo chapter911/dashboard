@@ -1,11 +1,15 @@
 <?= $this->extend('layouts/auth') ?>
 
 <?= $this->section('content') ?>
+<?php
+$branding = $branding ?? [];
+$appName = $branding['app_name'] ?? 'Dashboard PLN';
+?>
 <main class="layout" role="main">
     <section class="panel hero" aria-label="Informasi aplikasi">
         <div class="logo">
             <span class="logo-badge">PLN</span>
-            <span>Dashboard PLN</span>
+            <span><?= esc($appName) ?></span>
         </div>
         <h1>Monitor Kinerja dan Data Operasional dalam Satu Dashboard</h1>
         <p>Silakan login untuk mengakses laporan, analisa, dan monitoring berbasis unit secara terpusat.</p>

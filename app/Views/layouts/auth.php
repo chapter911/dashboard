@@ -3,7 +3,18 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title><?= esc($title ?? 'Login Dashboard PLN') ?></title>
+    <?php
+    $branding = $branding ?? [];
+    $appName = $branding['app_name'] ?? 'Dashboard PLN';
+    $loginBackgroundUrl = $branding['login_background_url'] ?? null;
+    $faviconUrl = $branding['app_logo_url'] ?? base_url('favicon.ico');
+    $primaryColor = $branding['app_primary_color'] ?? '#0a66c2';
+    $primaryColorDeep = $branding['app_primary_color_deep'] ?? '#074c91';
+    $pageTitle = trim((string) ($title ?? ''));
+    $browserTitle = $appName . ' -' . ($pageTitle !== '' ? ' ' . $pageTitle : '');
+    ?>
+    <title><?= esc($browserTitle) ?></title>
+    <link rel="icon" href="<?= esc($faviconUrl) ?>">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;700;800&display=swap" rel="stylesheet">
@@ -13,8 +24,8 @@
             --bg-cream: #fff7e8;
             --ink: #0f2942;
             --ink-soft: #4b6072;
-            --brand: #0078c8;
-            --brand-deep: #005d9b;
+            --brand: <?= esc($primaryColor) ?>;
+            --brand-deep: <?= esc($primaryColorDeep) ?>;
             --accent: #ff9f1c;
             --danger: #c62828;
             --ok: #1b8d41;
@@ -28,10 +39,16 @@
             font-family: 'Plus Jakarta Sans', sans-serif;
             color: var(--ink);
             min-height: 100vh;
+            <?php if (is_string($loginBackgroundUrl) && $loginBackgroundUrl !== ''): ?>
+            background:
+                linear-gradient(130deg, rgba(215, 238, 252, 0.85), rgba(255, 247, 232, 0.82)),
+                url('<?= esc($loginBackgroundUrl) ?>') center center / cover no-repeat fixed;
+            <?php else: ?>
             background:
                 radial-gradient(circle at 12% 10%, #ffffff 0, #ffffff55 26%, transparent 46%),
                 radial-gradient(circle at 88% 88%, #ffe5b0 0, #ffe5b055 20%, transparent 44%),
                 linear-gradient(130deg, var(--bg-sky), var(--bg-cream));
+            <?php endif; ?>
             display: grid;
             place-items: center;
             padding: 24px;
@@ -53,7 +70,7 @@
         }
 
         .hero {
-            background: linear-gradient(150deg, #0068ad, #0f82cf 55%, #3aabe6);
+            background: linear-gradient(150deg, var(--brand-deep), var(--brand) 55%, var(--brand));
             color: #f2fbff;
             position: relative;
         }

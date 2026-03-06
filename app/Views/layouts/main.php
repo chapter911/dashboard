@@ -8,11 +8,25 @@
     data-template="vertical-menu-template"
 >
 <head>
+    <?php
+    $branding = $branding ?? [];
+    $appName = $branding['app_name'] ?? 'Dashboard PLN';
+    $faviconUrl = $branding['app_logo_url'] ?? base_url('favicon.ico');
+    $primaryColor = $branding['app_primary_color'] ?? '#0a66c2';
+    $primaryColorDeep = $branding['app_primary_color_deep'] ?? '#074c91';
+    $primaryHex = ltrim((string) $primaryColor, '#');
+    $primaryR = ctype_xdigit($primaryHex) && strlen($primaryHex) === 6 ? hexdec(substr($primaryHex, 0, 2)) : 10;
+    $primaryG = ctype_xdigit($primaryHex) && strlen($primaryHex) === 6 ? hexdec(substr($primaryHex, 2, 2)) : 102;
+    $primaryB = ctype_xdigit($primaryHex) && strlen($primaryHex) === 6 ? hexdec(substr($primaryHex, 4, 2)) : 194;
+    $primaryRgb = $primaryR . ', ' . $primaryG . ', ' . $primaryB;
+    $pageTitle = trim((string) ($title ?? ''));
+    $browserTitle = $appName . ' -' . ($pageTitle !== '' ? ' ' . $pageTitle : '');
+    ?>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0" />
-    <title><?= esc($title ?? 'Dashboard PLN') ?></title>
+    <title><?= esc($browserTitle) ?></title>
 
-    <link rel="icon" type="image/x-icon" href="<?= base_url('favicon.ico') ?>" />
+    <link rel="icon" href="<?= esc($faviconUrl) ?>" />
     <link rel="stylesheet" href="<?= base_url('assets/vendor/fonts/tabler-icons.css') ?>" />
     <link rel="stylesheet" href="<?= base_url('assets/vendor/fonts/fontawesome.css') ?>" />
     <link rel="stylesheet" href="<?= base_url('assets/vendor/css/core.css') ?>" />
@@ -20,71 +34,88 @@
     <link rel="stylesheet" href="<?= base_url('assets/css/demo.css') ?>" />
     <link rel="stylesheet" href="<?= base_url('assets/vendor/libs/perfect-scrollbar/perfect-scrollbar.css') ?>" />
 
+    <style>
+        :root {
+            --app-primary: <?= esc($primaryColor) ?>;
+            --app-primary-deep: <?= esc($primaryColorDeep) ?>;
+            --bs-primary: var(--app-primary);
+            --app-primary-rgb: <?= esc($primaryRgb) ?>;
+        }
+
+        .btn-primary,
+        .btn-primary:focus,
+        .btn-primary:active,
+        .btn-primary:hover {
+            background-color: var(--app-primary) !important;
+            border-color: var(--app-primary) !important;
+        }
+
+        .text-primary,
+        a,
+        a:hover {
+            color: var(--app-primary);
+        }
+
+        .bg-primary {
+            background-color: var(--app-primary) !important;
+        }
+
+        .menu-vertical .menu-item .menu-link:hover {
+            color: var(--app-primary) !important;
+            background: rgba(var(--app-primary-rgb), 0.12) !important;
+        }
+
+        .menu-vertical .menu-item.active > .menu-link {
+            color: #fff !important;
+            background: linear-gradient(90deg, var(--app-primary), var(--app-primary-deep)) !important;
+            box-shadow: 0 0.3rem 0.8rem rgba(var(--app-primary-rgb), 0.45) !important;
+        }
+
+        .menu-vertical .menu-item.active > .menu-link i,
+        .menu-vertical .menu-item.active > .menu-link div {
+            color: #fff !important;
+        }
+
+        .menu-vertical .menu-item.active > .menu-link.menu-toggle::after {
+            color: #fff !important;
+            border-color: #fff !important;
+        }
+
+        .menu-vertical .menu-item.active > .menu-link::before {
+            background: #fff !important;
+        }
+
+        .table > :not(caption) > thead > tr > th,
+        .table thead th {
+            background-color: var(--app-primary) !important;
+            color: #fff !important;
+            border-color: rgba(var(--app-primary-rgb), 0.55) !important;
+        }
+
+        .swal2-container {
+            z-index: 20000 !important;
+        }
+    </style>
+
     <script src="<?= base_url('assets/vendor/js/helpers.js') ?>"></script>
     <script src="<?= base_url('assets/js/config.js') ?>"></script>
 </head>
 
 <body>
+    <?php
+    $logoUrl = $branding['app_logo_url'] ?? base_url('assets/img/branding/logo.png');
+    $uriPath = trim(uri_string(), '/');
+    $isDashboard = $uriPath === 'dashboard';
+    $isSetting = $uriPath === 'setting';
+    ?>
     <div class="layout-wrapper layout-content-navbar">
         <div class="layout-container">
-            <aside id="layout-menu" class="layout-menu menu-vertical menu bg-menu-theme">
-                <div class="app-brand demo">
-                    <a href="<?= site_url('dashboard') ?>" class="app-brand-link">
-                        <span class="app-brand-logo demo">
-                            <img src="<?= base_url('assets/img/branding/logo.png') ?>" alt="PLN" style="height: 24px;" />
-                        </span>
-                        <span class="app-brand-text demo menu-text fw-bold">Dashboard PLN</span>
-                    </a>
-
-                    <a href="javascript:void(0);" class="layout-menu-toggle menu-link text-large ms-auto">
-                        <i class="ti menu-toggle-icon d-none d-xl-block align-middle ti-sm"></i>
-                        <i class="ti ti-x d-block d-xl-none ti-sm align-middle"></i>
-                    </a>
-                </div>
-
-                <div class="menu-inner-shadow"></div>
-
-                <ul class="menu-inner py-1">
-                    <li class="menu-item active">
-                        <a href="<?= site_url('dashboard') ?>" class="menu-link">
-                            <i class="menu-icon tf-icons ti ti-smart-home"></i>
-                            <div>Dashboard</div>
-                        </a>
-                    </li>
-                </ul>
-            </aside>
+            <?= $this->include('layouts/partials/sidebar') ?>
 
             <div class="layout-page">
-                <nav class="layout-navbar container-xxl navbar navbar-expand-xl navbar-detached align-items-center bg-navbar-theme" id="layout-navbar">
-                    <div class="layout-menu-toggle navbar-nav align-items-xl-center me-3 me-xl-0 d-xl-none">
-                        <a class="nav-item nav-link px-0 me-xl-4" href="javascript:void(0)">
-                            <i class="ti ti-menu-2 ti-sm"></i>
-                        </a>
-                    </div>
+                <?= $this->include('layouts/partials/navbar') ?>
 
-                    <div class="navbar-nav-right d-flex align-items-center w-100" id="navbar-collapse">
-                        <div class="navbar-nav align-items-center me-auto">
-                            <h5 class="mb-0"><?= esc($pageHeading ?? 'Dashboard') ?></h5>
-                        </div>
-
-                        <ul class="navbar-nav flex-row align-items-center ms-auto">
-                            <li class="nav-item">
-                                <form action="<?= site_url('logout') ?>" method="post" class="d-inline">
-                                    <?= csrf_field() ?>
-                                    <button class="btn btn-danger btn-sm" type="submit">
-                                        <i class="ti ti-logout me-1"></i> Logout
-                                    </button>
-                                </form>
-                            </li>
-                        </ul>
-                    </div>
-                </nav>
-
-                <div class="content-wrapper">
-                    <div class="container-xxl flex-grow-1 container-p-y">
-                        <?= $this->renderSection('content') ?>
-                    </div>
-                </div>
+                <?= $this->include('layouts/partials/content') ?>
             </div>
         </div>
     </div>
@@ -95,6 +126,65 @@
     <script src="<?= base_url('assets/vendor/libs/perfect-scrollbar/perfect-scrollbar.js') ?>"></script>
     <script src="<?= base_url('assets/vendor/js/menu.js') ?>"></script>
     <script src="<?= base_url('assets/js/main.js') ?>"></script>
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+    <script>
+        (function () {
+            function showSwalLoading(title) {
+                if (!window.Swal) {
+                    return;
+                }
+
+                Swal.fire({
+                    title: title,
+                    allowOutsideClick: false,
+                    allowEscapeKey: false,
+                    showConfirmButton: false,
+                    didOpen: function () {
+                        Swal.showLoading();
+                    }
+                });
+            }
+
+            document.addEventListener('submit', function (event) {
+                const form = event.target;
+                if (!(form instanceof HTMLFormElement)) {
+                    return;
+                }
+
+                const method = (form.getAttribute('method') || 'get').toLowerCase();
+                const shouldShowForGet = method === 'get' && form.dataset.loading === '1';
+
+                if ((method !== 'post' && !shouldShowForGet) || form.dataset.skipSwalLoading === '1') {
+                    return;
+                }
+
+                const title = method === 'post'
+                    ? (form.dataset.loadingText || 'Menyimpan data...')
+                    : (form.dataset.loadingText || 'Memuat data...');
+
+                showSwalLoading(title);
+            });
+
+            document.addEventListener('click', function (event) {
+                const trigger = event.target.closest('a[data-loading="1"]');
+                if (!trigger) {
+                    return;
+                }
+
+                if (trigger.dataset.skipSwalLoading === '1') {
+                    return;
+                }
+
+                const href = trigger.getAttribute('href') || '';
+                if (href === '' || href.charAt(0) === '#') {
+                    return;
+                }
+
+                const title = trigger.dataset.loadingText || 'Memuat data...';
+                showSwalLoading(title);
+            });
+        })();
+    </script>
     <?= $this->renderSection('scripts') ?>
 </body>
 </html>
