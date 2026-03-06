@@ -5,6 +5,7 @@
     $displayName = $currentName !== '' ? $currentName : $currentUsername;
     $profilePhotoPath = trim((string) session('profile_photo_path'));
     $profilePhotoUrl = $profilePhotoPath !== '' ? base_url($profilePhotoPath) : null;
+    $isDevelopmentEnv = ENVIRONMENT === 'development';
     ?>
     <div class="layout-menu-toggle navbar-nav align-items-xl-center me-3 me-xl-0 d-xl-none">
         <a class="nav-item nav-link px-0 me-xl-4" href="javascript:void(0)">
@@ -13,8 +14,11 @@
     </div>
 
     <div class="navbar-nav-right d-flex align-items-center w-100" id="navbar-collapse">
-        <div class="navbar-nav align-items-center me-auto">
+        <div class="navbar-nav align-items-center me-auto d-flex flex-row gap-2">
             <h5 class="mb-0"><?= esc($pageHeading ?? 'Dashboard') ?></h5>
+            <?php if ($isDevelopmentEnv): ?>
+                <span class="badge bg-light text-danger border border-danger-subtle">DEVELOPMENT</span>
+            <?php endif; ?>
         </div>
 
         <ul class="navbar-nav flex-row align-items-center ms-auto">

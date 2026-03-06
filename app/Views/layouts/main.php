@@ -22,6 +22,7 @@
         $autoLogoutMinutes = 1440;
     }
     $autoLogoutMs = $autoLogoutMinutes * 60 * 1000;
+    $isDevelopmentEnv = ENVIRONMENT === 'development';
     $primaryHex = ltrim((string) $primaryColor, '#');
     $primaryR = ctype_xdigit($primaryHex) && strlen($primaryHex) === 6 ? hexdec(substr($primaryHex, 0, 2)) : 10;
     $primaryG = ctype_xdigit($primaryHex) && strlen($primaryHex) === 6 ? hexdec(substr($primaryHex, 2, 2)) : 102;
@@ -103,6 +104,25 @@
         .swal2-container {
             z-index: 20000 !important;
         }
+
+        <?php if ($isDevelopmentEnv): ?>
+        #layout-navbar {
+            background: #d32f2f !important;
+            border-color: #b71c1c !important;
+        }
+
+        #layout-navbar h5,
+        #layout-navbar .nav-link,
+        #layout-navbar .btn,
+        #layout-navbar .dropdown-toggle,
+        #layout-navbar i {
+            color: #fff !important;
+        }
+
+        #layout-navbar .btn-outline-secondary {
+            border-color: rgba(255, 255, 255, 0.65) !important;
+        }
+        <?php endif; ?>
     </style>
 
     <script src="<?= base_url('assets/vendor/js/helpers.js') ?>"></script>

@@ -187,6 +187,7 @@ $loginBackgroundUrl = $branding['login_background_url'] ?? null;
             </div>
         </div>
 
+        <?php if (ENVIRONMENT === 'development'): ?>
         <div class="card mt-4">
             <div class="card-header">
                 <h6 class="mb-0">Sinkronisasi Data Production -> Development</h6>
@@ -255,6 +256,7 @@ $loginBackgroundUrl = $branding['login_background_url'] ?? null;
                 </div>
             </div>
         </div>
+        <?php endif; ?>
     </div>
 </div>
 <?= $this->endSection() ?>

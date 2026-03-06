@@ -172,6 +172,15 @@ class Setting extends BaseController
 
     public function initProductionSync()
     {
+        if (ENVIRONMENT !== 'development') {
+            return $this->response->setJSON([
+                'ok' => false,
+                'message' => 'Fitur sinkronisasi hanya tersedia di environment development.',
+                'csrfToken' => csrf_token(),
+                'csrfHash' => csrf_hash(),
+            ])->setStatusCode(403);
+        }
+
         $rules = [
             'source_host' => 'required|max_length[190]',
             'source_port' => 'permit_empty|integer|greater_than_equal_to[1]|less_than_equal_to[65535]',
@@ -276,6 +285,15 @@ class Setting extends BaseController
 
     public function processProductionSyncStep()
     {
+        if (ENVIRONMENT !== 'development') {
+            return $this->response->setJSON([
+                'ok' => false,
+                'message' => 'Fitur sinkronisasi hanya tersedia di environment development.',
+                'csrfToken' => csrf_token(),
+                'csrfHash' => csrf_hash(),
+            ])->setStatusCode(403);
+        }
+
         $state = session(self::SYNC_STATE_KEY);
         if (! is_array($state)) {
             return $this->response->setJSON([
