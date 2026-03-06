@@ -186,6 +186,75 @@ $loginBackgroundUrl = $branding['login_background_url'] ?? null;
                 </span>
             </div>
         </div>
+
+        <div class="card mt-4">
+            <div class="card-header">
+                <h6 class="mb-0">Sinkronisasi Data Production -> Development</h6>
+            </div>
+            <div class="card-body">
+                <div class="alert alert-warning">
+                    Gunakan hanya di server development. Proses ini akan menimpa data tabel development.
+                </div>
+
+                <form id="productionSyncForm" novalidate>
+                    <?= csrf_field() ?>
+
+                    <div class="mb-3">
+                        <label class="form-label" for="source_host">Host Production</label>
+                        <input type="text" id="source_host" name="source_host" class="form-control" placeholder="127.0.0.1" required>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label" for="source_port">Port</label>
+                        <input type="number" id="source_port" name="source_port" class="form-control" value="3306" min="1" max="65535" required>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label" for="source_database">Database Production</label>
+                        <input type="text" id="source_database" name="source_database" class="form-control" required>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label" for="source_username">Username Production</label>
+                        <input type="text" id="source_username" name="source_username" class="form-control" required>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label" for="source_password">Password Production</label>
+                        <input type="password" id="source_password" name="source_password" class="form-control" autocomplete="off">
+                    </div>
+
+                    <div class="form-check mb-3">
+                        <input class="form-check-input" type="checkbox" value="1" id="sync_confirmation" name="sync_confirmation" required>
+                        <label class="form-check-label" for="sync_confirmation">
+                            Saya paham proses ini akan menimpa data development.
+                        </label>
+                    </div>
+
+                    <button type="submit" class="btn btn-danger" id="btnStartSync">
+                        <i class="ti ti-transfer me-1"></i> Mulai Sinkronisasi
+                    </button>
+                </form>
+
+                <div class="mt-3 d-none" id="syncProgressWrapper">
+                    <div class="d-flex justify-content-between mb-1">
+                        <span class="small text-muted" id="syncStatusText">Memulai sinkronisasi...</span>
+                        <span class="small fw-semibold" id="syncPercentText">0%</span>
+                    </div>
+                    <div class="progress" style="height: 12px;">
+                        <div
+                            id="syncProgressBar"
+                            class="progress-bar progress-bar-striped progress-bar-animated"
+                            role="progressbar"
+                            style="width: 0%;"
+                            aria-valuemin="0"
+                            aria-valuemax="100"
+                            aria-valuenow="0"
+                        ></div>
+                    </div>
+                </div>
+            </div>
+        </div>
     </div>
 </div>
 <?= $this->endSection() ?>
@@ -195,14 +264,143 @@ $loginBackgroundUrl = $branding['login_background_url'] ?? null;
     (function () {
         const colorInput = document.getElementById('app_primary_color');
         const textInput = document.getElementById('app_primary_color_text');
+        const syncForm = document.getElementById('productionSyncForm');
+        const syncProgressWrapper = document.getElementById('syncProgressWrapper');
+        const syncProgressBar = document.getElementById('syncProgressBar');
+        const syncPercentText = document.getElementById('syncPercentText');
+        const syncStatusText = document.getElementById('syncStatusText');
+        const syncButton = document.getElementById('btnStartSync');
 
-        if (!colorInput || !textInput) {
-            return;
+        function updateCsrfToken(token, hash) {
+            if (!token || !hash || !syncForm) {
+                return;
+            }
+
+            const csrfInput = syncForm.querySelector('input[name="' + token + '"]');
+            if (csrfInput) {
+                csrfInput.value = hash;
+            }
         }
 
-        colorInput.addEventListener('input', function () {
-            textInput.value = colorInput.value;
-        });
+        function setSyncProgress(value, text) {
+            const normalized = Math.max(0, Math.min(100, Number(value) || 0));
+
+            if (syncProgressBar) {
+                syncProgressBar.style.width = normalized + '%';
+                syncProgressBar.setAttribute('aria-valuenow', String(normalized));
+            }
+
+            if (syncPercentText) {
+                syncPercentText.textContent = normalized.toFixed(2).replace(/\.00$/, '') + '%';
+            }
+
+            if (syncStatusText && typeof text === 'string' && text !== '') {
+                syncStatusText.textContent = text;
+            }
+        }
+
+        async function processSyncStep() {
+            if (!syncForm) {
+                return;
+            }
+
+            const formData = new FormData(syncForm);
+            const response = await fetch('<?= site_url('setting/application/sync/step') ?>', {
+                method: 'POST',
+                body: formData,
+                headers: {
+                    'X-Requested-With': 'XMLHttpRequest'
+                }
+            });
+
+            const data = await response.json();
+            updateCsrfToken(data.csrfToken, data.csrfHash);
+
+            if (!response.ok || !data.ok) {
+                throw new Error(data.message || 'Sinkronisasi gagal diproses.');
+            }
+
+            setSyncProgress(data.progress || 0, data.message || 'Sinkronisasi berjalan...');
+
+            if (data.done) {
+                if (syncButton) {
+                    syncButton.disabled = false;
+                }
+
+                if (window.Swal) {
+                    Swal.fire({
+                        icon: 'success',
+                        title: 'Selesai',
+                        text: data.message || 'Sinkronisasi berhasil selesai.'
+                    });
+                }
+
+                return;
+            }
+
+            window.setTimeout(processSyncStep, 150);
+        }
+
+        async function startProductionSync(event) {
+            event.preventDefault();
+
+            if (!syncForm || !syncButton) {
+                return;
+            }
+
+            syncButton.disabled = true;
+            if (syncProgressWrapper) {
+                syncProgressWrapper.classList.remove('d-none');
+            }
+            setSyncProgress(0, 'Memvalidasi koneksi production...');
+
+            try {
+                const formData = new FormData(syncForm);
+                const response = await fetch('<?= site_url('setting/application/sync/init') ?>', {
+                    method: 'POST',
+                    body: formData,
+                    headers: {
+                        'X-Requested-With': 'XMLHttpRequest'
+                    }
+                });
+
+                const data = await response.json();
+                updateCsrfToken(data.csrfToken, data.csrfHash);
+
+                if (!response.ok || !data.ok) {
+                    throw new Error(data.message || 'Gagal memulai sinkronisasi.');
+                }
+
+                setSyncProgress(0, data.message || 'Sinkronisasi dimulai...');
+                processSyncStep();
+            } catch (error) {
+                if (syncButton) {
+                    syncButton.disabled = false;
+                }
+
+                if (window.Swal) {
+                    Swal.fire({
+                        icon: 'error',
+                        title: 'Sinkronisasi gagal',
+                        text: error && error.message ? error.message : 'Terjadi kesalahan saat sinkronisasi.'
+                    });
+                }
+
+                setSyncProgress(0, 'Gagal memulai sinkronisasi.');
+            }
+        }
+
+        if (!colorInput || !textInput) {
+            // Continue to keep sync handler active even when color fields are absent.
+        } else {
+            colorInput.addEventListener('input', function () {
+                textInput.value = colorInput.value;
+            });
+        }
+
+        if (syncForm) {
+            syncForm.addEventListener('submit', startProductionSync);
+        }
     })();
 </script>
 <?= $this->endSection() ?>

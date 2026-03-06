@@ -17,6 +17,8 @@ $routes->get('setting', 'Setting::index', ['filter' => 'auth']);
 $routes->post('setting', 'Setting::update', ['filter' => 'auth']);
 $routes->get('setting/application', 'Setting::application', ['filter' => 'auth']);
 $routes->post('setting/application', 'Setting::updateApplication', ['filter' => 'auth']);
+$routes->post('setting/application/sync/init', 'Setting::initProductionSync', ['filter' => 'auth']);
+$routes->post('setting/application/sync/step', 'Setting::processProductionSyncStep', ['filter' => 'auth']);
 $routes->get('setting/menu', 'Setting::menu', ['filter' => 'auth']);
 $routes->post('setting/menu', 'Setting::updateMenu', ['filter' => 'auth']);
 

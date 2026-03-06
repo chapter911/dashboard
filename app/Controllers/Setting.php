@@ -3,6 +3,7 @@
 namespace App\Controllers;
 
 use App\Models\AppSettingModel;
+use Config\Database;
 use CodeIgniter\HTTP\Files\UploadedFile;
 use CodeIgniter\Database\BaseConnection;
 use Throwable;
@@ -10,6 +11,8 @@ use Throwable;
 class Setting extends BaseController
 {
     private const BRANDING_UPLOAD_DIR = 'uploads/branding';
+    private const SYNC_STATE_KEY = 'prod_sync_state';
+    private const SYNC_BATCH_SIZE = 500;
 
     public function index(): string
     {
@@ -165,6 +168,240 @@ class Setting extends BaseController
         }
 
         return redirect()->to('/setting/menu')->with('success', 'Konfigurasi menu berhasil diperbarui.');
+    }
+
+    public function initProductionSync()
+    {
+        $rules = [
+            'source_host' => 'required|max_length[190]',
+            'source_port' => 'permit_empty|integer|greater_than_equal_to[1]|less_than_equal_to[65535]',
+            'source_database' => 'required|max_length[190]',
+            'source_username' => 'required|max_length[190]',
+            'source_password' => 'permit_empty|max_length[190]',
+            'sync_confirmation' => 'required|in_list[1]',
+        ];
+
+        if (! $this->validate($rules)) {
+            return $this->response->setJSON([
+                'ok' => false,
+                'message' => 'Input koneksi production tidak valid.',
+                'errors' => $this->validator->getErrors(),
+                'csrfToken' => csrf_token(),
+                'csrfHash' => csrf_hash(),
+            ])->setStatusCode(422);
+        }
+
+        $sourceConfig = [
+            'DBDriver' => 'MySQLi',
+            'hostname' => trim((string) $this->request->getPost('source_host')),
+            'port' => (int) ($this->request->getPost('source_port') ?: 3306),
+            'database' => trim((string) $this->request->getPost('source_database')),
+            'username' => trim((string) $this->request->getPost('source_username')),
+            'password' => (string) $this->request->getPost('source_password'),
+            'DBPrefix' => '',
+            'pConnect' => false,
+            'DBDebug' => false,
+            'charset' => 'utf8mb4',
+            'DBCollat' => 'utf8mb4_general_ci',
+        ];
+
+        try {
+            $sourceDb = Database::connect($sourceConfig, false);
+            $targetDb = db_connect();
+
+            $sourceTables = $sourceDb->listTables();
+            $targetTables = $targetDb->listTables();
+
+            $targetMap = [];
+            foreach ($targetTables as $table) {
+                $targetMap[$table] = true;
+            }
+
+            $tables = [];
+            $totalRows = 0;
+
+            foreach ($sourceTables as $table) {
+                if (! isset($targetMap[$table]) || $table === 'migrations') {
+                    continue;
+                }
+
+                $rowCount = (int) $sourceDb->table($table)->countAllResults();
+                $tables[] = [
+                    'name' => $table,
+                    'row_count' => $rowCount,
+                    'offset' => 0,
+                    'truncated' => false,
+                ];
+                $totalRows += $rowCount;
+            }
+
+            if ($tables === []) {
+                return $this->response->setJSON([
+                    'ok' => false,
+                    'message' => 'Tidak ada tabel yang bisa disinkronkan.',
+                    'csrfToken' => csrf_token(),
+                    'csrfHash' => csrf_hash(),
+                ])->setStatusCode(422);
+            }
+
+            session()->set(self::SYNC_STATE_KEY, [
+                'source' => $sourceConfig,
+                'tables' => $tables,
+                'table_index' => 0,
+                'processed_rows' => 0,
+                'total_rows' => $totalRows,
+                'total_tables' => count($tables),
+                'started_at' => date('Y-m-d H:i:s'),
+                'started_by' => (string) session('username'),
+            ]);
+        } catch (Throwable $e) {
+            log_message('error', 'PROD_SYNC_INIT_FAILED: {message}', ['message' => $e->getMessage()]);
+
+            return $this->response->setJSON([
+                'ok' => false,
+                'message' => 'Gagal terhubung ke database production atau membaca metadata tabel.',
+                'csrfToken' => csrf_token(),
+                'csrfHash' => csrf_hash(),
+            ])->setStatusCode(500);
+        }
+
+        return $this->response->setJSON([
+            'ok' => true,
+            'message' => 'Sinkronisasi dimulai.',
+            'progress' => 0,
+            'csrfToken' => csrf_token(),
+            'csrfHash' => csrf_hash(),
+        ]);
+    }
+
+    public function processProductionSyncStep()
+    {
+        $state = session(self::SYNC_STATE_KEY);
+        if (! is_array($state)) {
+            return $this->response->setJSON([
+                'ok' => false,
+                'message' => 'Tidak ada proses sinkronisasi aktif.',
+                'csrfToken' => csrf_token(),
+                'csrfHash' => csrf_hash(),
+            ])->setStatusCode(409);
+        }
+
+        try {
+            $sourceDb = Database::connect($state['source'] ?? [], false);
+            $targetDb = db_connect();
+
+            $tableIndex = (int) ($state['table_index'] ?? 0);
+            $tables = is_array($state['tables'] ?? null) ? $state['tables'] : [];
+            $totalRows = (int) ($state['total_rows'] ?? 0);
+            $processedRows = (int) ($state['processed_rows'] ?? 0);
+
+            if ($tableIndex >= count($tables)) {
+                session()->remove(self::SYNC_STATE_KEY);
+
+                return $this->response->setJSON([
+                    'ok' => true,
+                    'done' => true,
+                    'progress' => 100,
+                    'message' => 'Sinkronisasi selesai.',
+                    'csrfToken' => csrf_token(),
+                    'csrfHash' => csrf_hash(),
+                ]);
+            }
+
+            $table = $tables[$tableIndex];
+            $tableName = (string) ($table['name'] ?? '');
+            $offset = (int) ($table['offset'] ?? 0);
+            $rowCount = (int) ($table['row_count'] ?? 0);
+            $truncated = (bool) ($table['truncated'] ?? false);
+
+            if ($tableName === '') {
+                $state['table_index'] = $tableIndex + 1;
+                session()->set(self::SYNC_STATE_KEY, $state);
+
+                return $this->response->setJSON([
+                    'ok' => true,
+                    'done' => false,
+                    'progress' => $this->computeSyncProgress($processedRows, $totalRows, $state),
+                    'message' => 'Melanjutkan sinkronisasi...',
+                    'csrfToken' => csrf_token(),
+                    'csrfHash' => csrf_hash(),
+                ]);
+            }
+
+            $targetDb->query('SET FOREIGN_KEY_CHECKS = 0');
+
+            if (! $truncated) {
+                $targetDb->table($tableName)->truncate();
+                $tables[$tableIndex]['truncated'] = true;
+                $truncated = true;
+            }
+
+            if ($rowCount <= 0) {
+                $state['table_index'] = $tableIndex + 1;
+                $state['tables'] = $tables;
+                $targetDb->query('SET FOREIGN_KEY_CHECKS = 1');
+                session()->set(self::SYNC_STATE_KEY, $state);
+
+                return $this->response->setJSON([
+                    'ok' => true,
+                    'done' => false,
+                    'progress' => $this->computeSyncProgress($processedRows, $totalRows, $state),
+                    'message' => 'Tabel ' . $tableName . ' kosong, lanjut ke tabel berikutnya.',
+                    'csrfToken' => csrf_token(),
+                    'csrfHash' => csrf_hash(),
+                ]);
+            }
+
+            $rows = $sourceDb->table($tableName)
+                ->limit(self::SYNC_BATCH_SIZE, $offset)
+                ->get()
+                ->getResultArray();
+
+            $rowBatchCount = count($rows);
+
+            if ($rowBatchCount > 0) {
+                $targetDb->table($tableName)->insertBatch($rows, null, self::SYNC_BATCH_SIZE);
+                $offset += $rowBatchCount;
+                $processedRows += $rowBatchCount;
+                $tables[$tableIndex]['offset'] = $offset;
+            }
+
+            if ($offset >= $rowCount || $rowBatchCount === 0) {
+                $state['table_index'] = $tableIndex + 1;
+            }
+
+            $state['tables'] = $tables;
+            $state['processed_rows'] = $processedRows;
+
+            $targetDb->query('SET FOREIGN_KEY_CHECKS = 1');
+            session()->set(self::SYNC_STATE_KEY, $state);
+
+            $isDone = (int) $state['table_index'] >= count($tables);
+            if ($isDone) {
+                session()->remove(self::SYNC_STATE_KEY);
+            }
+
+            return $this->response->setJSON([
+                'ok' => true,
+                'done' => $isDone,
+                'progress' => $this->computeSyncProgress($processedRows, $totalRows, $state),
+                'message' => $isDone
+                    ? 'Sinkronisasi selesai.'
+                    : 'Sinkronisasi tabel ' . $tableName . ' berjalan...',
+                'csrfToken' => csrf_token(),
+                'csrfHash' => csrf_hash(),
+            ]);
+        } catch (Throwable $e) {
+            log_message('error', 'PROD_SYNC_STEP_FAILED: {message}', ['message' => $e->getMessage()]);
+            session()->remove(self::SYNC_STATE_KEY);
+
+            return $this->response->setJSON([
+                'ok' => false,
+                'message' => 'Sinkronisasi gagal: ' . $e->getMessage(),
+                'csrfToken' => csrf_token(),
+                'csrfHash' => csrf_hash(),
+            ])->setStatusCode(500);
+        }
     }
 
     private function hasValidUpload(?UploadedFile $file): bool
@@ -325,5 +562,21 @@ class Setting extends BaseController
         }
 
         return (int) $value;
+    }
+
+    private function computeSyncProgress(int $processedRows, int $totalRows, array $state): float
+    {
+        if ($totalRows > 0) {
+            return min(100, round(($processedRows / max(1, $totalRows)) * 100, 2));
+        }
+
+        $tableIndex = (int) ($state['table_index'] ?? 0);
+        $totalTables = (int) ($state['total_tables'] ?? 0);
+
+        if ($totalTables <= 0) {
+            return 100;
+        }
+
+        return min(100, round(($tableIndex / $totalTables) * 100, 2));
     }
 }
