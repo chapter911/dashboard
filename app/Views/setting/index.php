@@ -204,6 +204,11 @@ $allSeeders = is_array($seederOptions['all'] ?? null) ? $seederOptions['all'] : 
                         <button type="button" class="btn btn-outline-primary" id="btnRunMigrate">
                             <i class="ti ti-database-export me-1"></i> Jalankan php spark migrate
                         </button>
+                        <?php if (ENVIRONMENT === 'production'): ?>
+                            <button type="button" class="btn btn-outline-danger" id="btnRunGitPull">
+                                <i class="ti ti-git-pull-request me-1"></i> Jalankan git pull (production)
+                            </button>
+                        <?php endif; ?>
                     </div>
 
                     <div class="mb-3">
@@ -337,19 +342,22 @@ $allSeeders = is_array($seederOptions['all'] ?? null) ? $seederOptions['all'] : 
         const maintenanceForm = document.getElementById('maintenanceToolForm');
         const btnRunMigrate = document.getElementById('btnRunMigrate');
         const btnRunSeeder = document.getElementById('btnRunSeeder');
+        const btnRunGitPull = document.getElementById('btnRunGitPull');
         const commandOutputWrapper = document.getElementById('commandOutputWrapper');
         const commandStatusText = document.getElementById('commandStatusText');
         const commandOutput = document.getElementById('commandOutput');
         const seederSelect = document.getElementById('seeder_class');
 
         function updateCsrfToken(token, hash) {
-            if (!token || !hash || !syncForm) {
+            if (!token || !hash) {
                 return;
             }
 
-            const csrfInput = syncForm.querySelector('input[name="' + token + '"]');
-            if (csrfInput) {
-                csrfInput.value = hash;
+            if (syncForm) {
+                const csrfInput = syncForm.querySelector('input[name="' + token + '"]');
+                if (csrfInput) {
+                    csrfInput.value = hash;
+                }
             }
 
             if (maintenanceForm) {
@@ -381,6 +389,10 @@ $allSeeders = is_array($seederOptions['all'] ?? null) ? $seederOptions['all'] : 
 
             if (btnRunSeeder) {
                 btnRunSeeder.disabled = disabled;
+            }
+
+            if (btnRunGitPull) {
+                btnRunGitPull.disabled = disabled;
             }
 
             if (seederSelect) {
@@ -638,6 +650,12 @@ $allSeeders = is_array($seederOptions['all'] ?? null) ? $seederOptions['all'] : 
         if (btnRunMigrate) {
             btnRunMigrate.addEventListener('click', function () {
                 runMaintenanceCommand('<?= site_url('setting/application/tools/migrate') ?>');
+            });
+        }
+
+        if (btnRunGitPull) {
+            btnRunGitPull.addEventListener('click', function () {
+                runMaintenanceCommand('<?= site_url('setting/application/tools/git-pull') ?>');
             });
         }
 

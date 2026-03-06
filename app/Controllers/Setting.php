@@ -521,6 +521,39 @@ class Setting extends BaseController
         ])->setStatusCode($result['ok'] ? 200 : 500);
     }
 
+    public function runGitPullCommand()
+    {
+        if (! $this->canRunMaintenanceTools()) {
+            return $this->response->setJSON([
+                'ok' => false,
+                'message' => 'Anda tidak memiliki hak akses untuk menjalankan command maintenance.',
+                'output' => '',
+                'csrfToken' => csrf_token(),
+                'csrfHash' => csrf_hash(),
+            ])->setStatusCode(403);
+        }
+
+        if (ENVIRONMENT !== 'production') {
+            return $this->response->setJSON([
+                'ok' => false,
+                'message' => 'Fitur git pull hanya tersedia di production.',
+                'output' => '',
+                'csrfToken' => csrf_token(),
+                'csrfHash' => csrf_hash(),
+            ])->setStatusCode(403);
+        }
+
+        $result = $this->executeShellCommand('git -C ' . escapeshellarg(ROOTPATH) . ' pull --ff-only');
+
+        return $this->response->setJSON([
+            'ok' => $result['ok'],
+            'message' => $result['message'],
+            'output' => $result['output'],
+            'csrfToken' => csrf_token(),
+            'csrfHash' => csrf_hash(),
+        ])->setStatusCode($result['ok'] ? 200 : 500);
+    }
+
     public function listSeederOptions()
     {
         if (! $this->canRunMaintenanceTools()) {
@@ -869,6 +902,15 @@ class Setting extends BaseController
         $phpBinary = PHP_BINARY !== '' ? PHP_BINARY : 'php';
         $sparkPath = ROOTPATH . 'spark';
         $command = escapeshellarg($phpBinary) . ' ' . escapeshellarg($sparkPath) . ' ' . $sparkArguments;
+
+        return $this->executeShellCommand($command);
+    }
+
+    /**
+     * @return array{ok:bool,message:string,output:string}
+     */
+    private function executeShellCommand(string $command): array
+    {
 
         $output = [];
         $exitCode = 1;
