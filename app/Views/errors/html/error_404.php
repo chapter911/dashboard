@@ -1,84 +1,177 @@
-<!DOCTYPE html>
-<html lang="en">
+<!doctype html>
+<html
+    lang="en"
+    class="light-style"
+    dir="ltr"
+    data-theme="theme-default"
+    data-template="blank-template"
+>
 <head>
-    <meta charset="utf-8">
-    <title><?= lang('Errors.pageNotFound') ?></title>
+    <?php
+    $appName = 'Dashboard PLN';
+    $assetsBase = function_exists('base_url') ? rtrim(base_url('assets/'), '/') . '/' : '/assets/';
+    $homeUrl = function_exists('base_url') ? base_url('/') : '/';
+    $loginUrl = function_exists('base_url') ? base_url('login') : '/login';
+    ?>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0" />
+    <title>404 | <?= esc($appName) ?></title>
+
+    <link rel="stylesheet" href="<?= esc($assetsBase) ?>vendor/fonts/tabler-icons.css" />
+    <link rel="stylesheet" href="<?= esc($assetsBase) ?>vendor/css/core.css" />
+    <link rel="stylesheet" href="<?= esc($assetsBase) ?>vendor/css/theme-default.css" />
 
     <style>
-        div.logo {
-            height: 200px;
-            width: 155px;
-            display: inline-block;
-            opacity: 0.08;
-            position: absolute;
-            top: 2rem;
-            left: 50%;
-            margin-left: -73px;
+        :root {
+            --error-primary: #0a66c2;
+            --error-primary-deep: #074c91;
+            --error-primary-rgb: 10, 102, 194;
         }
+
         body {
-            height: 100%;
-            background: #fafafa;
-            font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
-            color: #777;
-            font-weight: 300;
+            min-height: 100vh;
+            background:
+                radial-gradient(circle at 15% 20%, rgba(var(--error-primary-rgb), 0.18), transparent 42%),
+                radial-gradient(circle at 80% 10%, rgba(var(--error-primary-rgb), 0.12), transparent 34%),
+                linear-gradient(160deg, #f5f9ff 0%, #eef4ff 45%, #f8fbff 100%);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 1.25rem;
         }
-        h1 {
-            font-weight: lighter;
-            letter-spacing: normal;
-            font-size: 3rem;
-            margin-top: 0;
-            margin-bottom: 0;
-            color: #222;
-        }
-        .wrap {
-            max-width: 1024px;
-            margin: 5rem auto;
-            padding: 2rem;
-            background: #fff;
-            text-align: center;
-            border: 1px solid #efefef;
-            border-radius: 0.5rem;
+
+        .error-shell {
+            width: 100%;
+            max-width: 900px;
             position: relative;
         }
-        pre {
-            white-space: normal;
-            margin-top: 1.5rem;
+
+        .error-card {
+            border: 0;
+            border-radius: 1rem;
+            overflow: hidden;
+            box-shadow: 0 1.2rem 2.8rem rgba(13, 37, 76, 0.16);
+            background: #fff;
         }
-        code {
-            background: #fafafa;
-            border: 1px solid #efefef;
-            padding: 0.5rem 1rem;
-            border-radius: 5px;
-            display: block;
+
+        .error-band {
+            height: 10px;
+            background: linear-gradient(90deg, var(--error-primary), var(--error-primary-deep));
         }
-        p {
-            margin-top: 1.5rem;
+
+        .error-content {
+            padding: 2.5rem 2rem;
         }
-        .footer {
-            margin-top: 2rem;
-            border-top: 1px solid #efefef;
-            padding: 1em 2em 0 2em;
-            font-size: 85%;
-            color: #999;
+
+        .error-code {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.45rem;
+            font-size: 0.82rem;
+            font-weight: 700;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            color: var(--error-primary);
+            background: rgba(var(--error-primary-rgb), 0.1);
+            border-radius: 999px;
+            padding: 0.45rem 0.8rem;
         }
-        a:active,
-        a:link,
-        a:visited {
-            color: #dd4814;
+
+        .error-number {
+            font-size: clamp(3.2rem, 12vw, 6rem);
+            line-height: 1;
+            margin: 0.85rem 0 0.65rem;
+            color: #1f2c4d;
+            letter-spacing: -0.02em;
+        }
+
+        .error-title {
+            color: #2d3b5f;
+            font-size: clamp(1.3rem, 2.8vw, 2rem);
+            margin-bottom: 0.8rem;
+        }
+
+        .error-message {
+            color: #5f6c8a;
+            max-width: 620px;
+            margin: 0 auto 1.5rem;
+            font-size: 1rem;
+        }
+
+        .error-actions {
+            display: flex;
+            gap: 0.75rem;
+            justify-content: center;
+            flex-wrap: wrap;
+        }
+
+        .btn-primary-custom {
+            background: linear-gradient(90deg, var(--error-primary), var(--error-primary-deep));
+            color: #fff !important;
+            border: 0;
+            box-shadow: 0 0.45rem 1.2rem rgba(var(--error-primary-rgb), 0.35);
+        }
+
+        .btn-primary-custom:hover {
+            color: #fff !important;
+            transform: translateY(-1px);
+        }
+
+        .error-footnote {
+            margin-top: 1.25rem;
+            color: #7a86a6;
+            font-size: 0.86rem;
+        }
+
+        @media (max-width: 575.98px) {
+            .error-content {
+                padding: 2rem 1.2rem;
+            }
+
+            .error-actions .btn {
+                width: 100%;
+            }
         }
     </style>
 </head>
 <body>
-    <div class="wrap">
-        <h1>404</h1>
+    <div class="error-shell">
+        <div class="card error-card text-center">
+            <div class="error-band"></div>
+            <div class="error-content">
+                <span class="error-code">
+                    <i class="ti ti-alert-circle"></i>
+                    Page Not Found
+                </span>
 
-        <p>
-            <?php if (ENVIRONMENT !== 'production') : ?>
-                <?= nl2br(esc($message)) ?>
-            <?php else : ?>
-                <?= lang('Errors.sorryCannotFind') ?>
-            <?php endif; ?>
-        </p>
+                <h1 class="error-number">404</h1>
+                <h2 class="error-title"><?= lang('Errors.pageNotFound') ?></h2>
+
+                <p class="error-message">
+                    <?php if (ENVIRONMENT !== 'production') : ?>
+                        <?= nl2br(esc($message)) ?>
+                    <?php else : ?>
+                        <?= lang('Errors.sorryCannotFind') ?>
+                    <?php endif; ?>
+                </p>
+
+                <div class="error-actions">
+                    <a href="<?= esc($homeUrl) ?>" class="btn btn-primary btn-primary-custom">
+                        <i class="ti ti-home me-1"></i> Kembali Ke Beranda
+                    </a>
+                    <button type="button" class="btn btn-outline-secondary" onclick="window.history.back();">
+                        <i class="ti ti-arrow-left me-1"></i> Halaman Sebelumnya
+                    </button>
+                    <a href="<?= esc($loginUrl) ?>" class="btn btn-outline-primary">
+                        <i class="ti ti-login me-1"></i> Login
+                    </a>
+                </div>
+
+                <div class="error-footnote">
+                    <?= esc($appName) ?>
+                </div>
+            </div>
+        </div>
     </div>
 </body>
 </html>

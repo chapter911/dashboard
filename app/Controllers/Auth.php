@@ -4,6 +4,7 @@ namespace App\Controllers;
 
 use App\Models\LoginAuditModel;
 use App\Models\UserModel;
+use CodeIgniter\HTTP\ResponseInterface;
 use Throwable;
 
 class Auth extends BaseController
@@ -12,7 +13,7 @@ class Auth extends BaseController
     private const MAX_NETWORK_ATTEMPTS = 25;
     private const LOCKOUT_SECONDS = 900;
 
-    public function index(): string
+    public function index(): ResponseInterface|string
     {
         if (session()->get('isLoggedIn')) {
             return redirect()->to('/dashboard');
