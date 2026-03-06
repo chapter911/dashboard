@@ -1,7 +1,3 @@
-# Disable directory browsing
-
-Options -Indexes
-
 <IfModule authz_core_module>
 	Require all granted
 </IfModule>
@@ -12,12 +8,7 @@ Options -Indexes
 
 # ----------------------------------------------------------------------
 
-# Turning on the rewrite engine is necessary for the following rules and features.
-
-# FollowSymLinks must be enabled for this to work.
-
 <IfModule mod_rewrite.c>
-	Options +SymLinksIfOwnerMatch
 	RewriteEngine On
 
     # If you installed CodeIgniter in a subfolder, you will need to
@@ -43,7 +34,7 @@ Options -Indexes
 
 </IfModule>
 
-<IfModule !mod_rewrite.c> # If we don't have mod_rewrite installed, all 404's # can be sent to index.php, and everything works as normal.
+<IfModule !mod_rewrite.c>
 ErrorDocument 404 index.php
 </IfModule>
 

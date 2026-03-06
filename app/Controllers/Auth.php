@@ -67,7 +67,17 @@ class Auth extends BaseController
         }
 
         $userModel = new UserModel();
-        $user = $userModel->findByUsername($username);
+
+        try {
+            $user = $userModel->findByUsername($username);
+        } catch (Throwable $e) {
+            log_message('critical', 'AUTH_DB_UNAVAILABLE: {message}', ['message' => $e->getMessage()]);
+
+            return redirect()->back()->withInput()->with(
+                'error',
+                'Layanan autentikasi sedang tidak tersedia. Silakan coba beberapa saat lagi.'
+            );
+        }
 
         if ($user === null) {
             $this->recordFailedAttempt($throttleUserKey, self::MAX_LOGIN_ATTEMPTS, $username, $context, 'UNKNOWN_USER');
