@@ -39,6 +39,13 @@ $renderMenuItems = static function (array $menus, callable $renderMenuItems, cal
         $icon = trim((string) ($menu['icon'] ?? 'ti-point'));
         $icon = $icon !== '' ? $icon : 'ti-point';
         $link = (string) ($menu['link'] ?? '#');
+        $normalizedLink = trim($link, '/');
+
+        if ($normalizedLink === 'dashboard') {
+            $label = 'Dashboards';
+            $icon = 'ti-brand-speedtest';
+        }
+
         $children = is_array($menu['children'] ?? null) ? $menu['children'] : [];
 
         $active = $isLinkActive($link) || ($children !== [] && $hasActiveChild($children, $isLinkActive, $hasActiveChild));
