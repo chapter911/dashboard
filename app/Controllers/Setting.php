@@ -456,15 +456,36 @@ class Setting extends BaseController
             ])->setStatusCode(403);
         }
 
-        $result = $this->executeSparkCommand('migrate --all');
+        try {
+            $migrations = service('migrations');
+            $result = $migrations->latest();
+
+            if ($result === false) {
+                return $this->response->setJSON([
+                    'ok' => false,
+                    'message' => 'Migrasi gagal dijalankan.',
+                    'output' => 'Migration runner mengembalikan status gagal. Periksa tabel migrations dan konfigurasi database.',
+                    'csrfToken' => csrf_token(),
+                    'csrfHash' => csrf_hash(),
+                ])->setStatusCode(500);
+            }
+        } catch (Throwable $e) {
+            return $this->response->setJSON([
+                'ok' => false,
+                'message' => 'Migrasi gagal dijalankan.',
+                'output' => $e->getMessage(),
+                'csrfToken' => csrf_token(),
+                'csrfHash' => csrf_hash(),
+            ])->setStatusCode(500);
+        }
 
         return $this->response->setJSON([
-            'ok' => $result['ok'],
-            'message' => $result['message'],
-            'output' => $result['output'],
+            'ok' => true,
+            'message' => 'Migrasi berhasil dijalankan.',
+            'output' => 'Database sudah di-upgrade ke versi migration terbaru.',
             'csrfToken' => csrf_token(),
             'csrfHash' => csrf_hash(),
-        ])->setStatusCode($result['ok'] ? 200 : 500);
+        ]);
     }
 
     public function runSeederCommand()
@@ -504,7 +525,22 @@ class Setting extends BaseController
             ])->setStatusCode(422);
         }
 
-        $result = $this->executeSparkCommand('db:seed ' . escapeshellarg($seeder));
+        try {
+            $seederRunner = Database::seeder();
+            $seederRunner->call($seeder);
+            $result = [
+                'ok' => true,
+                'message' => 'Seeder berhasil dijalankan.',
+                'output' => 'Seeder ' . $seeder . ' berhasil dieksekusi.',
+            ];
+        } catch (Throwable $e) {
+            $result = [
+                'ok' => false,
+                'message' => 'Seeder gagal dijalankan.',
+                'output' => $e->getMessage(),
+            ];
+        }
+
         $this->recordSeederRun(
             $seeder,
             (string) ($availableSeeders[$seeder]['hash'] ?? ''),
