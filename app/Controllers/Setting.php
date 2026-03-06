@@ -46,6 +46,7 @@ class Setting extends BaseController
             'pageHeading' => 'Setting Aplikasi',
             'activeSettingTab' => 'application',
             'canRunMaintenanceTools' => $this->canRunMaintenanceTools(),
+            'shellExecAvailable' => $this->isShellFunctionEnabled('exec'),
             'seederOptions' => $this->getSeederOptionsPayload(),
             'formData' => [
                 'app_name' => old('app_name', $appName),
@@ -911,6 +912,13 @@ class Setting extends BaseController
      */
     private function executeShellCommand(string $command): array
     {
+        if (! $this->isShellFunctionEnabled('exec')) {
+            return [
+                'ok' => false,
+                'message' => 'Perintah gagal dijalankan karena fungsi exec() dinonaktifkan di server.',
+                'output' => 'Server hosting menonaktifkan exec(). Jalankan perintah lewat SSH/terminal server atau minta provider mengaktifkan fungsi shell execution.',
+            ];
+        }
 
         $output = [];
         $exitCode = 1;
@@ -924,5 +932,21 @@ class Setting extends BaseController
             'message' => $exitCode === 0 ? 'Perintah berhasil dijalankan.' : 'Perintah gagal dijalankan.',
             'output' => $commandOutput,
         ];
+    }
+
+    private function isShellFunctionEnabled(string $functionName): bool
+    {
+        if (! function_exists($functionName)) {
+            return false;
+        }
+
+        $disabled = (string) ini_get('disable_functions');
+        if ($disabled === '') {
+            return true;
+        }
+
+        $disabledFunctions = array_map('trim', explode(',', strtolower($disabled)));
+
+        return ! in_array(strtolower($functionName), $disabledFunctions, true);
     }
 }

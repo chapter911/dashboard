@@ -8,6 +8,7 @@ $primaryColorCurrent = $branding['app_primary_color'] ?? '#0a66c2';
 $logoUrl = $branding['app_logo_url'] ?? null;
 $loginBackgroundUrl = $branding['login_background_url'] ?? null;
 $canRunMaintenanceTools = (bool) ($canRunMaintenanceTools ?? false);
+$shellExecAvailable = (bool) ($shellExecAvailable ?? false);
 $seederOptions = is_array($seederOptions ?? null) ? $seederOptions : ['pending' => [], 'all' => []];
 $pendingSeeders = is_array($seederOptions['pending'] ?? null) ? $seederOptions['pending'] : [];
 $allSeeders = is_array($seederOptions['all'] ?? null) ? $seederOptions['all'] : [];
@@ -205,9 +206,14 @@ $allSeeders = is_array($seederOptions['all'] ?? null) ? $seederOptions['all'] : 
                             <i class="ti ti-database-export me-1"></i> Jalankan php spark migrate
                         </button>
                         <?php if (ENVIRONMENT === 'production'): ?>
-                            <button type="button" class="btn btn-outline-danger" id="btnRunGitPull">
+                            <button type="button" class="btn btn-outline-danger" id="btnRunGitPull" <?= $shellExecAvailable ? '' : 'disabled' ?>>
                                 <i class="ti ti-git-pull-request me-1"></i> Jalankan git pull (production)
                             </button>
+                            <?php if (! $shellExecAvailable): ?>
+                                <div class="small text-danger mt-1">
+                                    Server menonaktifkan fungsi <code>exec()</code>. Git pull via web tidak tersedia, jalankan lewat SSH/terminal hosting.
+                                </div>
+                            <?php endif; ?>
                         <?php endif; ?>
                     </div>
 
