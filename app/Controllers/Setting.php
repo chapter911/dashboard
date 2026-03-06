@@ -195,11 +195,6 @@ class Setting extends BaseController
         }
 
         $rules = [
-            'source_host' => 'required|max_length[190]',
-            'source_port' => 'permit_empty|integer|greater_than_equal_to[1]|less_than_equal_to[65535]',
-            'source_database' => 'required|max_length[190]',
-            'source_username' => 'required|max_length[190]',
-            'source_password' => 'permit_empty|max_length[190]',
             'sync_confirmation' => 'required|in_list[1]',
         ];
 
@@ -213,19 +208,19 @@ class Setting extends BaseController
             ])->setStatusCode(422);
         }
 
-        $sourceConfig = [
-            'DBDriver' => 'MySQLi',
-            'hostname' => trim((string) $this->request->getPost('source_host')),
-            'port' => (int) ($this->request->getPost('source_port') ?: 3306),
-            'database' => trim((string) $this->request->getPost('source_database')),
-            'username' => trim((string) $this->request->getPost('source_username')),
-            'password' => (string) $this->request->getPost('source_password'),
-            'DBPrefix' => '',
-            'pConnect' => false,
-            'DBDebug' => false,
-            'charset' => 'utf8mb4',
-            'DBCollat' => 'utf8mb4_general_ci',
-        ];
+        $sourceConfig = $this->buildSyncSourceConfigFromEnv();
+
+        if ($sourceConfig === null) {
+            return $this->response->setJSON([
+                'ok' => false,
+                'message' => 'Kredensial source database belum lengkap di ENV.',
+                'errors' => [
+                    'env' => 'Lengkapi ENV: SYNC_SOURCE_HOST, SYNC_SOURCE_PORT, SYNC_SOURCE_DATABASE, SYNC_SOURCE_USERNAME, SYNC_SOURCE_PASSWORD.',
+                ],
+                'csrfToken' => csrf_token(),
+                'csrfHash' => csrf_hash(),
+            ])->setStatusCode(422);
+        }
 
         try {
             $sourceDb = Database::connect($sourceConfig, false);
@@ -984,5 +979,81 @@ class Setting extends BaseController
         $disabledFunctions = array_map('trim', explode(',', strtolower($disabled)));
 
         return ! in_array(strtolower($functionName), $disabledFunctions, true);
+    }
+
+    /**
+     * @return array<string,mixed>|null
+     */
+    private function buildSyncSourceConfigFromEnv(): ?array
+    {
+        $host = $this->envFirst([
+            'SYNC_SOURCE_HOST',
+            'sync.source.host',
+            'database.sync.hostname',
+        ]);
+
+        $portRaw = $this->envFirst([
+            'SYNC_SOURCE_PORT',
+            'sync.source.port',
+            'database.sync.port',
+        ]);
+
+        $database = $this->envFirst([
+            'SYNC_SOURCE_DATABASE',
+            'sync.source.database',
+            'database.sync.database',
+        ]);
+
+        $username = $this->envFirst([
+            'SYNC_SOURCE_USERNAME',
+            'sync.source.username',
+            'database.sync.username',
+        ]);
+
+        $password = $this->envFirst([
+            'SYNC_SOURCE_PASSWORD',
+            'sync.source.password',
+            'database.sync.password',
+        ]);
+
+        if ($host === '' || $database === '' || $username === '') {
+            return null;
+        }
+
+        $port = is_numeric($portRaw) ? (int) $portRaw : 3306;
+        if ($port < 1 || $port > 65535) {
+            $port = 3306;
+        }
+
+        return [
+            'DBDriver' => 'MySQLi',
+            'hostname' => $host,
+            'port' => $port,
+            'database' => $database,
+            'username' => $username,
+            'password' => $password,
+            'DBPrefix' => '',
+            'pConnect' => false,
+            'DBDebug' => false,
+            'charset' => 'utf8mb4',
+            'DBCollat' => 'utf8mb4_general_ci',
+        ];
+    }
+
+    private function envFirst(array $keys): string
+    {
+        foreach ($keys as $key) {
+            $value = getenv($key);
+            if ($value === false) {
+                continue;
+            }
+
+            $text = trim((string) $value);
+            if ($text !== '') {
+                return $text;
+            }
+        }
+
+        return '';
     }
 }

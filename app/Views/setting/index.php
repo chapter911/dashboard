@@ -270,33 +270,13 @@ $allSeeders = is_array($seederOptions['all'] ?? null) ? $seederOptions['all'] : 
                     Gunakan hanya di server development. Proses ini akan menimpa data tabel development.
                 </div>
 
+                <div class="alert alert-info">
+                    Kredensial source database diambil dari ENV server development.
+                    <br>Gunakan variabel: <code>SYNC_SOURCE_HOST</code>, <code>SYNC_SOURCE_PORT</code>, <code>SYNC_SOURCE_DATABASE</code>, <code>SYNC_SOURCE_USERNAME</code>, <code>SYNC_SOURCE_PASSWORD</code>.
+                </div>
+
                 <form id="productionSyncForm" novalidate>
                     <?= csrf_field() ?>
-
-                    <div class="mb-3">
-                        <label class="form-label" for="source_host">Host Production</label>
-                        <input type="text" id="source_host" name="source_host" class="form-control" placeholder="127.0.0.1" required>
-                    </div>
-
-                    <div class="mb-3">
-                        <label class="form-label" for="source_port">Port</label>
-                        <input type="number" id="source_port" name="source_port" class="form-control" value="3306" min="1" max="65535" required>
-                    </div>
-
-                    <div class="mb-3">
-                        <label class="form-label" for="source_database">Database Production</label>
-                        <input type="text" id="source_database" name="source_database" class="form-control" required>
-                    </div>
-
-                    <div class="mb-3">
-                        <label class="form-label" for="source_username">Username Production</label>
-                        <input type="text" id="source_username" name="source_username" class="form-control" required>
-                    </div>
-
-                    <div class="mb-3">
-                        <label class="form-label" for="source_password">Password Production</label>
-                        <input type="password" id="source_password" name="source_password" class="form-control" autocomplete="off">
-                    </div>
 
                     <div class="form-check mb-3">
                         <input class="form-check-input" type="checkbox" value="1" id="sync_confirmation" name="sync_confirmation" required>
