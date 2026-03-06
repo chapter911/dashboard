@@ -3,11 +3,21 @@
 namespace App\Database\Migrations;
 
 use CodeIgniter\Database\Migration;
-use RuntimeException;
 
 class ImportAttachedMenuAccessData extends Migration
 {
-    private const SOURCE_SQL_FILE = ROOTPATH . 'menu_akses.sql';
+    /**
+     * Try these files in order. First existing non-empty file will be used.
+     *
+     * - database/seeds/menu_data.sql: recommended source exported from development DB
+     * - menu_akses.sql: legacy source file path used previously
+     *
+     * @var array<int, string>
+     */
+    private const SOURCE_SQL_FILES = [
+        ROOTPATH . 'database/seeds/menu_data.sql',
+        ROOTPATH . 'menu_akses.sql',
+    ];
 
     /**
      * Only import menu data to match existing app structure safely.
@@ -19,14 +29,11 @@ class ImportAttachedMenuAccessData extends Migration
 
     public function up()
     {
-        if (! is_file(self::SOURCE_SQL_FILE)) {
-            throw new RuntimeException('Source SQL file not found: ' . self::SOURCE_SQL_FILE);
-        }
+        $content = $this->getSourceSqlContent();
+        if ($content === null) {
+            log_message('warning', 'MENU_IMPORT_SOURCE_NOT_FOUND_OR_EMPTY. Migration skipped safely.');
 
-        $content = file_get_contents(self::SOURCE_SQL_FILE);
-
-        if (! is_string($content) || trim($content) === '') {
-            throw new RuntimeException('Source SQL file is empty or unreadable: ' . self::SOURCE_SQL_FILE);
+            return;
         }
 
         $statements = preg_split('/;\s*(?:\r?\n|$)/', $content);
@@ -69,5 +76,25 @@ class ImportAttachedMenuAccessData extends Migration
     public function down()
     {
         // Intentionally no-op: we do not delete existing menu data on rollback.
+    }
+
+    private function getSourceSqlContent(): ?string
+    {
+        foreach (self::SOURCE_SQL_FILES as $path) {
+            if (! is_file($path)) {
+                continue;
+            }
+
+            $content = file_get_contents($path);
+            if (! is_string($content) || trim($content) === '') {
+                continue;
+            }
+
+            log_message('info', 'MENU_IMPORT_SOURCE_USED: {path}', ['path' => $path]);
+
+            return $content;
+        }
+
+        return null;
     }
 }

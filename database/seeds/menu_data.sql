@@ -1,0 +1,5 @@
+-- Optional menu data source for migration 2026-03-07-000005_ImportAttachedMenuAccessData.
+-- Fill this file with INSERT statements from development DB for tables:
+--   menu_lv1, menu_lv2, menu_lv3, menu_akses
+-- Example export command (run from dev DB host):
+--   mysqldump -uUSER -p DATABASE menu_lv1 menu_lv2 menu_lv3 menu_akses --no-create-info --skip-triggers > menu_data.sql
