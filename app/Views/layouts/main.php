@@ -101,6 +101,25 @@
             border-color: rgba(var(--app-primary-rgb), 0.55) !important;
         }
 
+        /* Keep table blocks inside cards from touching card edges. */
+        .card > .table-responsive {
+            padding: 0 1rem 1rem;
+        }
+
+        .card > .table-responsive .table {
+            margin-bottom: 0;
+        }
+
+        .card > .table-responsive .dataTables_wrapper .row {
+            margin-left: 0;
+            margin-right: 0;
+        }
+
+        .card > .table-responsive .dataTables_wrapper .row > [class*='col-'] {
+            padding-left: 0;
+            padding-right: 0;
+        }
+
         .swal2-container {
             z-index: 20000 !important;
         }

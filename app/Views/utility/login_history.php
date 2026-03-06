@@ -22,10 +22,11 @@ $histories = is_array($histories ?? null) ? $histories : [];
         <div class="card">
             <div class="card-header">
                 <h5 class="mb-0">Riwayat Login</h5>
-                <small class="text-muted">Menampilkan seluruh catatan login/logout dari tabel <code>trn_login</code>.</small>
+                <small class="text-muted">Menampilkan seluruh catatan login/logout pengguna aplikasi.</small>
             </div>
-            <div class="table-responsive text-nowrap">
-                <table id="loginHistoryTable" class="table table-hover">
+            <div class="card-body pt-2 pb-3 px-3 px-md-4">
+                <div class="table-responsive text-nowrap">
+                    <table id="loginHistoryTable" class="table table-hover">
                     <thead>
                         <tr>
                             <th>No</th>
@@ -40,12 +41,6 @@ $histories = is_array($histories ?? null) ? $histories : [];
                         </tr>
                     </thead>
                     <tbody>
-                        <?php if ($histories === []): ?>
-                            <tr>
-                                <td colspan="9" class="text-center text-muted">Belum ada data login history.</td>
-                            </tr>
-                        <?php endif; ?>
-
                         <?php foreach ($histories as $index => $row): ?>
                             <?php
                             $createdDateRaw = trim((string) ($row['created_date'] ?? ''));
@@ -77,7 +72,8 @@ $histories = is_array($histories ?? null) ? $histories : [];
                             </tr>
                         <?php endforeach; ?>
                     </tbody>
-                </table>
+                    </table>
+                </div>
             </div>
         </div>
     </div>
@@ -118,6 +114,7 @@ $histories = is_array($histories ?? null) ? $histories : [];
                 info: 'Menampilkan _START_ sampai _END_ dari _TOTAL_ data',
                 infoEmpty: 'Menampilkan 0 sampai 0 dari 0 data',
                 zeroRecords: 'Data tidak ditemukan',
+                emptyTable: 'Belum ada data login history.',
                 paginate: {
                     first: 'Awal',
                     last: 'Akhir',
