@@ -4,11 +4,16 @@
 <?php
 $units = is_array($units ?? null) ? $units : [];
 $filters = is_array($filters ?? null) ? $filters : [];
-$rows = is_array($rows ?? null) ? $rows : [];
 $bulanOptions = is_array($bulanOptions ?? null) ? $bulanOptions : [];
-$pager = $pager ?? null;
-$total = (int) ($total ?? 0);
 ?>
+
+<link rel="stylesheet" href="<?= base_url('assets/vendor/libs/select2/select2.css') ?>">
+<link rel="stylesheet" href="<?= base_url('assets/vendor/libs/datatables-bs5/datatables.bootstrap5.css') ?>">
+<style>
+    .text-nowrap {
+        white-space: nowrap;
+    }
+</style>
 
 <div class="row">
     <div class="col-12">
@@ -22,24 +27,22 @@ $total = (int) ($total ?? 0);
 </div>
 
 <div class="card mb-4">
-    <div class="card-header">
-        <h5 class="mb-0">Filter Saldo Pelanggan</h5>
-    </div>
     <div class="card-body">
-        <form method="get" action="<?= site_url('C_Laporan/Saldo') ?>" class="row g-3">
+        <form method="post" action="<?= site_url('C_Laporan/Saldo/data') ?>" class="row g-3" id="saldoFilterForm">
+            <?= csrf_field() ?>
             <div class="col-md-3">
                 <label class="form-label">Unit</label>
-                <select class="form-select" name="unit">
+                <select class="form-select select2" name="unit" id="filter_unit">
                     <option value="*">Semua Unit</option>
                     <?php foreach ($units as $unit): ?>
                         <?php $uid = (string) ($unit['unit_id'] ?? ''); ?>
-                        <option value="<?= esc($uid) ?>" <?= ($filters['unit'] ?? '*') === $uid ? 'selected' : '' ?>><?= esc((string) ($unit['unit_name'] ?? '')) ?></option>
+                        <option value="<?= esc($uid) ?>" <?= ($filters['unit'] ?? '*') === $uid ? 'selected' : '' ?>><?= esc($uid . ' - ' . (string) ($unit['unit_name'] ?? '')) ?></option>
                     <?php endforeach; ?>
                 </select>
             </div>
             <div class="col-md-3">
                 <label class="form-label">Bulan</label>
-                <select class="form-select" name="bulan">
+                <select class="form-select select2" name="bulan" id="filter_bulan">
                     <option value="*">Semua Bulan</option>
                     <?php foreach ($bulanOptions as $b): ?>
                         <?php $val = (string) ($b['v_bulan_rekap'] ?? ''); if ($val === '') continue; ?>
@@ -47,76 +50,68 @@ $total = (int) ($total ?? 0);
                     <?php endforeach; ?>
                 </select>
             </div>
-            <div class="col-md-2">
+            <div class="col-md-3">
                 <label class="form-label">IDPEL</label>
-                <input class="form-control" type="text" name="idpel" value="<?= esc((string) ($filters['idpel'] ?? '')) ?>">
+                <input class="form-control" type="text" name="idpel" id="filter_idpel" value="<?= esc((string) ($filters['idpel'] ?? '')) ?>" placeholder="Cari IDPEL" autocomplete="off">
             </div>
-            <div class="col-md-2">
-                <label class="form-label">Cari</label>
-                <input class="form-control" type="text" name="search" value="<?= esc((string) ($filters['search'] ?? '')) ?>" placeholder="Nama / No Meter">
-            </div>
-            <div class="col-md-2 d-flex align-items-end gap-2">
-                <button class="btn btn-primary" type="submit">Tampilkan</button>
-                <a class="btn btn-label-secondary" href="<?= site_url('C_Laporan/Saldo') ?>">Reset</a>
+            <div class="col-md-3">
+                <label class="form-label">Filter</label>
+                <button class="btn btn-primary w-100" type="button" id="btn-filter-saldo">Filter</button>
             </div>
         </form>
     </div>
 </div>
 
 <div class="card">
-    <div class="card-header d-flex justify-content-between align-items-center">
-        <h5 class="mb-0">Data Saldo</h5>
-        <small class="text-muted">Total data: <?= esc((string) $total) ?></small>
+    <div class="card-header">
+        <h5 class="mb-0">Data Saldo Pelanggan</h5>
     </div>
-    <div class="table-responsive text-nowrap">
-        <table class="table table-hover mb-0">
+    <div class="card-body">
+        <div class="table-responsive text-nowrap">
+        <table class="table table-bordered table-striped" id="saldoTable">
             <thead>
                 <tr>
-                    <th>Bulan Rekap</th>
-                    <th>Unit UP</th>
+                    <th>V_BULAN_REKAP</th>
+                    <th>UNITUP</th>
                     <th>IDPEL</th>
-                    <th>Nama</th>
-                    <th>Tarif / Daya</th>
-                    <th>No Meter KWH</th>
-                    <th class="text-end">Aksi</th>
+                    <th>NAMA</th>
+                    <th>NAMAPNJ</th>
+                    <th>TARIF</th>
+                    <th>DAYA</th>
+                    <th>KDPT_2</th>
+                    <th>THBLMUT</th>
+                    <th>JENIS_MK</th>
+                    <th>JENISLAYANAN</th>
+                    <th>FRT</th>
+                    <th>KOGOL</th>
+                    <th>FKMKWH</th>
+                    <th>NOMOR_METER_KWH</th>
+                    <th>TANGGAL_PASANG_RUBAH_APP</th>
+                    <th>MERK_METER_KWH</th>
+                    <th>TYPE_METER_KWH</th>
+                    <th>TAHUN_TERA_METER_KWH</th>
+                    <th>TAHUN_BUAT_METER_KWH</th>
+                    <th>NOMOR_GARDU</th>
+                    <th>NOMOR_JURUSAN_TIANG</th>
+                    <th>NAMA_GARDU</th>
+                    <th>KAPASITAS_TRAFO</th>
+                    <th>NOMOR_METER_PREPAID</th>
+                    <th>PRODUCT</th>
+                    <th>KOORDINAT_X</th>
+                    <th>KOORDINAT_Y</th>
+                    <th>KDAM</th>
+                    <th>KDPEMBMETER</th>
+                    <th>KET_KDPEMBMETER</th>
+                    <th>STATUS_DIL</th>
+                    <th>KRN</th>
+                    <th>VKRN</th>
+                    <th>AKSI</th>
                 </tr>
             </thead>
-            <tbody>
-                <?php if ($rows === []): ?>
-                    <tr><td colspan="7" class="text-center text-muted">Belum ada data saldo.</td></tr>
-                <?php endif; ?>
-                <?php foreach ($rows as $row): ?>
-                    <tr>
-                        <td><?= esc((string) ($row['v_bulan_rekap'] ?? '-')) ?></td>
-                        <td><?= esc((string) ($row['unit_up'] ?? '-')) ?></td>
-                        <td><?= esc((string) ($row['idpel'] ?? '-')) ?></td>
-                        <td><?= esc((string) ($row['nama'] ?? '-')) ?></td>
-                        <td><?= esc((string) ($row['tarif'] ?? '-')) ?> / <?= esc((string) ($row['daya'] ?? '-')) ?></td>
-                        <td><?= esc((string) ($row['nomor_meter_kwh'] ?? '-')) ?></td>
-                        <td class="text-end">
-                            <button
-                                type="button"
-                                class="btn btn-sm btn-label-primary btn-edit-saldo"
-                                data-idpel="<?= esc((string) ($row['idpel'] ?? '')) ?>"
-                                data-bulan="<?= esc((string) ($row['v_bulan_rekap'] ?? '')) ?>"
-                                data-nama="<?= esc((string) ($row['nama'] ?? '')) ?>"
-                                data-tarif="<?= esc((string) ($row['tarif'] ?? '')) ?>"
-                                data-daya="<?= esc((string) ($row['daya'] ?? '')) ?>"
-                                data-meter="<?= esc((string) ($row['nomor_meter_kwh'] ?? '')) ?>"
-                                data-bs-toggle="modal"
-                                data-bs-target="#saldoModal"
-                            >Update</button>
-                        </td>
-                    </tr>
-                <?php endforeach; ?>
-            </tbody>
+            <tbody></tbody>
         </table>
-    </div>
-    <?php if ($pager): ?>
-        <div class="card-body pt-3">
-            <?= $pager->links() ?>
         </div>
-    <?php endif; ?>
+    </div>
 </div>
 
 <div class="modal fade" id="saldoModal" tabindex="-1" aria-hidden="true">
@@ -166,18 +161,146 @@ $total = (int) ($total ?? 0);
 <?= $this->endSection() ?>
 
 <?= $this->section('scripts') ?>
+<script src="<?= base_url('assets/vendor/libs/select2/select2.js') ?>"></script>
+<script src="<?= base_url('assets/vendor/libs/datatables-bs5/datatables-bootstrap5.js') ?>"></script>
 <script>
-    document.addEventListener('click', function (event) {
-        const btn = event.target.closest('.btn-edit-saldo');
-        if (!btn) {
-            return;
-        }
-        document.getElementById('saldo_idpel').value = btn.getAttribute('data-idpel') || '';
-        document.getElementById('saldo_bulan').value = btn.getAttribute('data-bulan') || '';
-        document.getElementById('saldo_nama').value = btn.getAttribute('data-nama') || '';
-        document.getElementById('saldo_tarif').value = btn.getAttribute('data-tarif') || '';
-        document.getElementById('saldo_daya').value = btn.getAttribute('data-daya') || '';
-        document.getElementById('saldo_meter').value = btn.getAttribute('data-meter') || '';
+    $(function () {
+        var $form = $('#saldoFilterForm');
+        var swalActive = false;
+
+        $('.select2').select2({ width: '100%' });
+
+        var showLoading = function () {
+            if (typeof Swal === 'undefined') {
+                return;
+            }
+
+            swalActive = true;
+            Swal.fire({
+                title: 'Mohon Tunggu',
+                html: 'Mengambil data saldo...',
+                allowOutsideClick: false,
+                showConfirmButton: false,
+                didOpen: function () {
+                    Swal.showLoading();
+                }
+            });
+        };
+
+        var hideLoading = function () {
+            if (! swalActive || typeof Swal === 'undefined') {
+                return;
+            }
+            Swal.close();
+            swalActive = false;
+        };
+
+        var table = $('#saldoTable').DataTable({
+            autoWidth: false,
+            processing: true,
+            serverSide: true,
+            searching: false,
+            pageLength: 10,
+            scrollX: true,
+            ajax: {
+                url: '<?= site_url('C_Laporan/Saldo/data') ?>',
+                type: 'POST',
+                data: function (d) {
+                    d.unit = $('#filter_unit').val();
+                    d.bulan = $('#filter_bulan').val();
+                    d.idpel = $('#filter_idpel').val();
+                    d['<?= esc(csrf_token()) ?>'] = $form.find('input[name="<?= esc(csrf_token()) ?>"]').val();
+                },
+                dataSrc: function (json) {
+                    return json.data || [];
+                },
+                error: function () {
+                    hideLoading();
+                    if (typeof Swal !== 'undefined') {
+                        Swal.fire({
+                            icon: 'error',
+                            title: 'Gagal',
+                            text: 'Gagal memuat data saldo.'
+                        });
+                    }
+                }
+            },
+            columns: [
+                { data: 'v_bulan_rekap', defaultContent: '-' },
+                { data: 'unit_up', defaultContent: '-' },
+                { data: 'idpel', defaultContent: '-' },
+                { data: 'nama', defaultContent: '-', className: 'text-nowrap' },
+                { data: 'nama_pnj', defaultContent: '-', className: 'text-nowrap' },
+                { data: 'tarif', defaultContent: '-' },
+                { data: 'daya', defaultContent: '-' },
+                { data: 'kdpt_2', defaultContent: '-' },
+                { data: 'thbl_mut', defaultContent: '-' },
+                { data: 'jenis_mk', defaultContent: '-' },
+                { data: 'jenis_layanan', defaultContent: '-' },
+                { data: 'frt', defaultContent: '-' },
+                { data: 'kogol', defaultContent: '-' },
+                { data: 'fkmkwh', defaultContent: '-' },
+                { data: 'nomor_meter_kwh', defaultContent: '-' },
+                { data: 'tanggal_pasang_rubah_app', defaultContent: '-' },
+                { data: 'merk_meter_kwh', defaultContent: '-' },
+                { data: 'type_meter_kwh', defaultContent: '-' },
+                { data: 'tahun_tera_meter_kwh', defaultContent: '-' },
+                { data: 'tahun_buat_meter_kwh', defaultContent: '-' },
+                { data: 'nomor_gardu', defaultContent: '-' },
+                { data: 'nomor_jurusan_tiang', defaultContent: '-' },
+                { data: 'nama_gardu', defaultContent: '-' },
+                { data: 'kapasitas_trafo', defaultContent: '-' },
+                { data: 'nomor_meter_prepaid', defaultContent: '-' },
+                { data: 'product', defaultContent: '-' },
+                { data: 'koordinat_x', defaultContent: '-' },
+                { data: 'koordinat_y', defaultContent: '-' },
+                { data: 'kdam', defaultContent: '-' },
+                { data: 'kd_pemb_meter', defaultContent: '-' },
+                { data: 'ket_kdpembmeter', defaultContent: '-' },
+                { data: 'status_dil', defaultContent: '-' },
+                { data: 'krn', defaultContent: '-' },
+                { data: 'vkrn', defaultContent: '-' },
+                { data: 'aksi', orderable: false, searchable: false }
+            ]
+        });
+
+        $('#saldoTable').on('preXhr.dt', function () {
+            showLoading();
+        });
+
+        $('#saldoTable').on('xhr.dt', function (_e, _settings, _json, xhr) {
+            var freshCsrf = xhr ? xhr.getResponseHeader('X-CSRF-TOKEN') : null;
+            if (freshCsrf) {
+                $form.find('input[name="<?= esc(csrf_token()) ?>"]').val(freshCsrf);
+            }
+            hideLoading();
+        });
+
+        $('#btn-filter-saldo').on('click', function () {
+            table.draw();
+        });
+
+        $('#filter_unit, #filter_bulan').on('change', function () {
+            table.draw();
+        });
+
+        $('#filter_idpel').on('input', function () {
+            table.draw();
+        });
+
+        document.addEventListener('click', function (event) {
+            var btn = event.target.closest('.btn-edit-saldo');
+            if (!btn) {
+                return;
+            }
+
+            document.getElementById('saldo_idpel').value = btn.getAttribute('data-idpel') || '';
+            document.getElementById('saldo_bulan').value = btn.getAttribute('data-bulan') || '';
+            document.getElementById('saldo_nama').value = btn.getAttribute('data-nama') || '';
+            document.getElementById('saldo_tarif').value = btn.getAttribute('data-tarif') || '';
+            document.getElementById('saldo_daya').value = btn.getAttribute('data-daya') || '';
+            document.getElementById('saldo_meter').value = btn.getAttribute('data-meter') || '';
+        });
     });
 </script>
 <?= $this->endSection() ?>

@@ -12,7 +12,8 @@ class Setting extends BaseController
 {
     private const BRANDING_UPLOAD_DIR = 'uploads/branding';
     private const SYNC_STATE_KEY = 'prod_sync_state';
-    private const SYNC_BATCH_SIZE = 500;
+    private const SYNC_BATCH_SIZE = 2000;
+    private const SYNC_BATCH_MAX = 50000;
     private const SEEDER_RUNS_TABLE = 'seeder_runs';
 
     public function index(): string
@@ -48,6 +49,7 @@ class Setting extends BaseController
             'canRunMaintenanceTools' => $this->canRunMaintenanceTools(),
             'shellExecAvailable' => $this->isShellFunctionEnabled('exec'),
             'seederOptions' => $this->getSeederOptionsPayload(),
+            'syncTableOptions' => $this->getSyncTableOptions(),
             'formData' => [
                 'app_name' => old('app_name', $appName),
                 'app_primary_color' => old('app_primary_color', $primaryColor),
@@ -196,6 +198,7 @@ class Setting extends BaseController
 
         $rules = [
             'sync_confirmation' => 'required|in_list[1]',
+            'sync_scope' => 'permit_empty|in_list[all,selected]',
         ];
 
         if (! $this->validate($rules)) {
@@ -222,6 +225,37 @@ class Setting extends BaseController
             ])->setStatusCode(422);
         }
 
+        $syncScope = strtolower(trim((string) $this->request->getPost('sync_scope')));
+        if (! in_array($syncScope, ['all', 'selected'], true)) {
+            $syncScope = 'all';
+        }
+
+        $selectedTableNames = [];
+        $selectedInput = $this->request->getPost('selected_tables');
+        if (is_array($selectedInput)) {
+            foreach ($selectedInput as $tableName) {
+                $normalized = trim((string) $tableName);
+                if ($normalized === '') {
+                    continue;
+                }
+
+                if (preg_match('/^[A-Za-z0-9_]+$/', $normalized) !== 1) {
+                    continue;
+                }
+
+                $selectedTableNames[$normalized] = true;
+            }
+        }
+
+        if ($syncScope === 'selected' && $selectedTableNames === []) {
+            return $this->response->setJSON([
+                'ok' => false,
+                'message' => 'Pilih minimal satu tabel untuk sinkronisasi.',
+                'csrfToken' => csrf_token(),
+                'csrfHash' => csrf_hash(),
+            ])->setStatusCode(422);
+        }
+
         try {
             $sourceDb = Database::connect($sourceConfig, false);
             $targetDb = db_connect();
@@ -231,22 +265,42 @@ class Setting extends BaseController
 
             $targetMap = [];
             foreach ($targetTables as $table) {
-                $targetMap[$table] = true;
+                if (is_string($table) && $table !== '') {
+                    $targetMap[$table] = true;
+                }
             }
 
             $tables = [];
             $totalRows = 0;
 
             foreach ($sourceTables as $table) {
-                if (! isset($targetMap[$table]) || $table === 'migrations') {
+                if (! is_string($table) || $table === '' || $table === 'migrations') {
                     continue;
                 }
 
+                if ($syncScope === 'selected' && ! isset($selectedTableNames[$table])) {
+                    continue;
+                }
+
+                if (! isset($targetMap[$table])) {
+                    $created = $this->createTargetTableFromSource($sourceDb, $targetDb, $table);
+                    if (! $created) {
+                        log_message('warning', 'SYNC_SKIP_TABLE_MISSING_TARGET {table}', ['table' => $table]);
+                        continue;
+                    }
+
+                    $targetMap[$table] = true;
+                }
+
                 $rowCount = (int) $sourceDb->table($table)->countAllResults();
+                $primaryKey = $this->discoverSinglePrimaryKey($sourceDb, $table);
                 $tables[] = [
                     'name' => $table,
                     'row_count' => $rowCount,
                     'offset' => 0,
+                    'primary_key' => $primaryKey,
+                    'last_pk' => null,
+                    'batch_size' => $this->getSyncBatchSize(),
                     'truncated' => false,
                 ];
                 $totalRows += $rowCount;
@@ -255,22 +309,28 @@ class Setting extends BaseController
             if ($tables === []) {
                 return $this->response->setJSON([
                     'ok' => false,
-                    'message' => 'Tidak ada tabel yang bisa disinkronkan.',
+                    'message' => $syncScope === 'selected'
+                        ? 'Tabel terpilih tidak tersedia di source/target database.'
+                        : 'Tidak ada tabel yang bisa disinkronkan.',
                     'csrfToken' => csrf_token(),
                     'csrfHash' => csrf_hash(),
                 ])->setStatusCode(422);
             }
 
-            session()->set(self::SYNC_STATE_KEY, [
+            $syncState = [
                 'source' => $sourceConfig,
                 'tables' => $tables,
                 'table_index' => 0,
                 'processed_rows' => 0,
                 'total_rows' => $totalRows,
                 'total_tables' => count($tables),
+                'sync_scope' => $syncScope,
+                'selected_tables' => array_keys($selectedTableNames),
                 'started_at' => date('Y-m-d H:i:s'),
                 'started_by' => (string) session('username'),
-            ]);
+            ];
+
+            session()->set(self::SYNC_STATE_KEY, $syncState);
         } catch (Throwable $e) {
             log_message('error', 'PROD_SYNC_INIT_FAILED: {message}', ['message' => $e->getMessage()]);
 
@@ -284,8 +344,9 @@ class Setting extends BaseController
 
         return $this->response->setJSON([
             'ok' => true,
-            'message' => 'Sinkronisasi dimulai.',
+            'message' => 'Sinkronisasi dimulai untuk ' . count($tables) . ' tabel.',
             'progress' => 0,
+            'syncMeta' => $this->buildSyncMeta($syncState),
             'csrfToken' => csrf_token(),
             'csrfHash' => csrf_hash(),
         ]);
@@ -338,6 +399,7 @@ class Setting extends BaseController
                     'done' => true,
                     'progress' => 100,
                     'message' => 'Sinkronisasi selesai.',
+                    'syncMeta' => $this->buildSyncMeta($state),
                     'csrfToken' => csrf_token(),
                     'csrfHash' => csrf_hash(),
                 ]);
@@ -347,7 +409,17 @@ class Setting extends BaseController
             $tableName = (string) ($table['name'] ?? '');
             $offset = (int) ($table['offset'] ?? 0);
             $rowCount = (int) ($table['row_count'] ?? 0);
+            $primaryKey = trim((string) ($table['primary_key'] ?? ''));
+            $lastPk = $table['last_pk'] ?? null;
             $truncated = (bool) ($table['truncated'] ?? false);
+            $batchSize = (int) ($table['batch_size'] ?? $this->getSyncBatchSize());
+            if ($batchSize < 100) {
+                $batchSize = 100;
+            }
+            $batchMax = $this->getSyncBatchMax();
+            if ($batchSize > $batchMax) {
+                $batchSize = $batchMax;
+            }
 
             if ($tableName === '') {
                 $state['table_index'] = $tableIndex + 1;
@@ -358,6 +430,7 @@ class Setting extends BaseController
                     'done' => false,
                     'progress' => $this->computeSyncProgress($processedRows, $totalRows, $state),
                     'message' => 'Melanjutkan sinkronisasi...',
+                    'syncMeta' => $this->buildSyncMeta($state),
                     'csrfToken' => csrf_token(),
                     'csrfHash' => csrf_hash(),
                 ]);
@@ -382,23 +455,97 @@ class Setting extends BaseController
                     'done' => false,
                     'progress' => $this->computeSyncProgress($processedRows, $totalRows, $state),
                     'message' => 'Tabel ' . $tableName . ' kosong, lanjut ke tabel berikutnya.',
+                    'syncMeta' => $this->buildSyncMeta($state),
                     'csrfToken' => csrf_token(),
                     'csrfHash' => csrf_hash(),
                 ]);
             }
 
-            $rows = $sourceDb->table($tableName)
-                ->limit(self::SYNC_BATCH_SIZE, $offset)
-                ->get()
-                ->getResultArray();
+            $rowBatchCount = 0;
+            $batchTuneMessage = '';
+            try {
+                // For large tables, keyset pagination is significantly faster than OFFSET.
+                if ($primaryKey !== '') {
+                    $builder = $sourceDb->table($tableName)
+                        ->orderBy($primaryKey, 'ASC')
+                        ->limit($batchSize);
 
-            $rowBatchCount = count($rows);
+                    if ($lastPk !== null && $lastPk !== '') {
+                        $builder->where($primaryKey . ' >', $lastPk);
+                    }
 
-            if ($rowBatchCount > 0) {
-                $targetDb->table($tableName)->insertBatch($rows, null, self::SYNC_BATCH_SIZE);
-                $offset += $rowBatchCount;
-                $processedRows += $rowBatchCount;
-                $tables[$tableIndex]['offset'] = $offset;
+                    $rows = $builder->get()->getResultArray();
+                } else {
+                    $rows = $sourceDb->table($tableName)
+                        ->limit($batchSize, $offset)
+                        ->get()
+                        ->getResultArray();
+                }
+
+                $rowBatchCount = count($rows);
+
+                if ($rowBatchCount > 0) {
+                    try {
+                        $targetDb->table($tableName)->insertBatch($rows, null, $batchSize);
+                    } catch (Throwable $insertError) {
+                        $isDuplicateKeyError = stripos($insertError->getMessage(), 'Duplicate entry') !== false;
+                        if (! $isDuplicateKeyError) {
+                            throw $insertError;
+                        }
+
+                        // Resume-safe behavior: when a prior step already inserted part/all rows,
+                        // continue by ignoring duplicates for this batch.
+                        $targetDb->table($tableName)->ignore(true)->insertBatch($rows, null, $batchSize);
+                    }
+
+                    $offset += $rowBatchCount;
+                    $processedRows += $rowBatchCount;
+                    $tables[$tableIndex]['offset'] = $offset;
+
+                    if ($primaryKey !== '') {
+                        $lastRow = $rows[$rowBatchCount - 1] ?? [];
+                        if (is_array($lastRow) && array_key_exists($primaryKey, $lastRow)) {
+                            $tables[$tableIndex]['last_pk'] = $lastRow[$primaryKey];
+                        }
+                    }
+
+                    // Adaptive scale-up: if batch is full and stable, increase gradually.
+                    if ($rowBatchCount >= $batchSize && $batchSize < $batchMax) {
+                        $scaledBatch = (int) min($batchMax, max($batchSize + 100, (int) floor($batchSize * 1.25)));
+                        if ($scaledBatch > $batchSize) {
+                            $tables[$tableIndex]['batch_size'] = $scaledBatch;
+                            $batchTuneMessage = ' Batch dinaikkan otomatis ke ' . $scaledBatch . '.';
+                        }
+                    }
+                }
+
+                unset($rows);
+                if (function_exists('gc_collect_cycles')) {
+                    gc_collect_cycles();
+                }
+            } catch (Throwable $e) {
+                $isMemoryError = stripos($e->getMessage(), 'Allowed memory size') !== false;
+                if ($isMemoryError && $batchSize > 100) {
+                    $nextBatchSize = max(100, (int) floor($batchSize / 2));
+                    $tables[$tableIndex]['batch_size'] = $nextBatchSize;
+                    $state['tables'] = $tables;
+                    $state['processed_rows'] = $processedRows;
+
+                    $targetDb->query('SET FOREIGN_KEY_CHECKS = 1');
+                    session()->set(self::SYNC_STATE_KEY, $state);
+
+                    return $this->response->setJSON([
+                        'ok' => true,
+                        'done' => false,
+                        'progress' => $this->computeSyncProgress($processedRows, $totalRows, $state),
+                        'message' => 'Memori hampir habis di tabel ' . $tableName . '. Batch otomatis diturunkan ke ' . $nextBatchSize . ' dan proses dilanjutkan.',
+                        'syncMeta' => $this->buildSyncMeta($state),
+                        'csrfToken' => csrf_token(),
+                        'csrfHash' => csrf_hash(),
+                    ]);
+                }
+
+                throw $e;
             }
 
             if ($offset >= $rowCount || $rowBatchCount === 0) {
@@ -422,13 +569,13 @@ class Setting extends BaseController
                 'progress' => $this->computeSyncProgress($processedRows, $totalRows, $state),
                 'message' => $isDone
                     ? 'Sinkronisasi selesai.'
-                    : 'Sinkronisasi tabel ' . $tableName . ' berjalan...',
+                    : 'Sinkronisasi tabel ' . $tableName . ' berjalan...' . $batchTuneMessage,
+                'syncMeta' => $this->buildSyncMeta($state),
                 'csrfToken' => csrf_token(),
                 'csrfHash' => csrf_hash(),
             ]);
         } catch (Throwable $e) {
             log_message('error', 'PROD_SYNC_STEP_FAILED: {message}', ['message' => $e->getMessage()]);
-            session()->remove(self::SYNC_STATE_KEY);
 
             return $this->response->setJSON([
                 'ok' => false,
@@ -437,6 +584,211 @@ class Setting extends BaseController
                 'csrfHash' => csrf_hash(),
             ])->setStatusCode(500);
         }
+    }
+
+    public function getProductionSyncState()
+    {
+        if (ENVIRONMENT !== 'development') {
+            return $this->response->setJSON([
+                'ok' => false,
+                'message' => 'Fitur sinkronisasi hanya tersedia di environment development.',
+                'csrfToken' => csrf_token(),
+                'csrfHash' => csrf_hash(),
+            ])->setStatusCode(403);
+        }
+
+        if (! $this->canRunMaintenanceTools()) {
+            return $this->response->setJSON([
+                'ok' => false,
+                'message' => 'Akses ditolak. Hanya admin yang dapat menjalankan fitur ini.',
+                'csrfToken' => csrf_token(),
+                'csrfHash' => csrf_hash(),
+            ])->setStatusCode(403);
+        }
+
+        $state = $this->getActiveSyncState();
+        if ($state === null) {
+            return $this->response->setJSON([
+                'ok' => true,
+                'active' => false,
+                'progress' => 0,
+                'message' => 'Tidak ada proses sinkronisasi aktif.',
+                'csrfToken' => csrf_token(),
+                'csrfHash' => csrf_hash(),
+            ]);
+        }
+
+        $tableIndex = (int) ($state['table_index'] ?? 0);
+        $tables = is_array($state['tables'] ?? null) ? $state['tables'] : [];
+        $processedRows = (int) ($state['processed_rows'] ?? 0);
+        $totalRows = (int) ($state['total_rows'] ?? 0);
+        $tableName = '';
+        if ($tableIndex >= 0 && $tableIndex < count($tables)) {
+            $tableName = (string) ($tables[$tableIndex]['name'] ?? '');
+        }
+
+        return $this->response->setJSON([
+            'ok' => true,
+            'active' => true,
+            'progress' => $this->computeSyncProgress($processedRows, $totalRows, $state),
+            'message' => $tableName !== ''
+                ? 'Sinkronisasi terhenti di tabel ' . $tableName . '. Lanjutkan proses untuk meneruskan.'
+                : 'Sinkronisasi masih memiliki proses yang belum selesai.',
+            'syncMeta' => $this->buildSyncMeta($state),
+            'csrfToken' => csrf_token(),
+            'csrfHash' => csrf_hash(),
+        ]);
+    }
+
+    public function resumeProductionSync()
+    {
+        if (ENVIRONMENT !== 'development') {
+            return $this->response->setJSON([
+                'ok' => false,
+                'message' => 'Fitur sinkronisasi hanya tersedia di environment development.',
+                'csrfToken' => csrf_token(),
+                'csrfHash' => csrf_hash(),
+            ])->setStatusCode(403);
+        }
+
+        if (! $this->canRunMaintenanceTools()) {
+            return $this->response->setJSON([
+                'ok' => false,
+                'message' => 'Akses ditolak. Hanya admin yang dapat menjalankan fitur ini.',
+                'csrfToken' => csrf_token(),
+                'csrfHash' => csrf_hash(),
+            ])->setStatusCode(403);
+        }
+
+        $state = $this->getActiveSyncState();
+        if ($state === null) {
+            return $this->response->setJSON([
+                'ok' => false,
+                'message' => 'Tidak ada proses sinkronisasi yang dapat dilanjutkan.',
+                'csrfToken' => csrf_token(),
+                'csrfHash' => csrf_hash(),
+            ])->setStatusCode(409);
+        }
+
+        $processedRows = (int) ($state['processed_rows'] ?? 0);
+        $totalRows = (int) ($state['total_rows'] ?? 0);
+
+        return $this->response->setJSON([
+            'ok' => true,
+            'message' => 'Melanjutkan sinkronisasi dari progress terakhir.',
+            'progress' => $this->computeSyncProgress($processedRows, $totalRows, $state),
+            'syncMeta' => $this->buildSyncMeta($state),
+            'csrfToken' => csrf_token(),
+            'csrfHash' => csrf_hash(),
+        ]);
+    }
+
+    /**
+     * @param array<string,mixed> $state
+     * @return array<string,mixed>
+     */
+    private function buildSyncMeta(array $state): array
+    {
+        $tableIndex = (int) ($state['table_index'] ?? 0);
+        $tables = is_array($state['tables'] ?? null) ? $state['tables'] : [];
+        $currentTable = null;
+
+        if ($tableIndex >= 0 && $tableIndex < count($tables)) {
+            $row = $tables[$tableIndex];
+            if (is_array($row)) {
+                $currentTable = [
+                    'name' => (string) ($row['name'] ?? ''),
+                    'offset' => (int) ($row['offset'] ?? 0),
+                    'row_count' => (int) ($row['row_count'] ?? 0),
+                    'batch_size' => (int) ($row['batch_size'] ?? $this->getSyncBatchSize()),
+                ];
+            }
+        }
+
+        return [
+            'table_index' => $tableIndex,
+            'total_tables' => (int) ($state['total_tables'] ?? count($tables)),
+            'processed_rows' => (int) ($state['processed_rows'] ?? 0),
+            'total_rows' => (int) ($state['total_rows'] ?? 0),
+            'current_table' => $currentTable,
+        ];
+    }
+
+    private function getSyncBatchSize(): int
+    {
+        $raw = $this->envFirst([
+            'SYNC_BATCH_SIZE',
+            'sync.batch_size',
+        ]);
+
+        $max = $this->getSyncBatchMax();
+
+        if (! is_numeric($raw)) {
+            return min(self::SYNC_BATCH_SIZE, $max);
+        }
+
+        $size = (int) $raw;
+        if ($size < 100) {
+            $size = 100;
+        }
+
+        if ($size > $max) {
+            $size = $max;
+        }
+
+        return $size;
+    }
+
+    private function getSyncBatchMax(): int
+    {
+        $raw = $this->envFirst([
+            'SYNC_BATCH_MAX',
+            'sync.batch_max',
+        ]);
+
+        if (! is_numeric($raw)) {
+            return self::SYNC_BATCH_MAX;
+        }
+
+        $size = (int) $raw;
+        if ($size < 100) {
+            $size = 100;
+        }
+
+        if ($size > self::SYNC_BATCH_MAX) {
+            $size = self::SYNC_BATCH_MAX;
+        }
+
+        return $size;
+    }
+
+    private function discoverSinglePrimaryKey(BaseConnection $db, string $tableName): ?string
+    {
+        try {
+            $fields = $db->getFieldData($tableName);
+        } catch (Throwable $e) {
+            return null;
+        }
+
+        $primaryCandidates = [];
+        foreach ($fields as $field) {
+            if (! is_object($field)) {
+                continue;
+            }
+
+            $isPrimary = (int) ($field->primary_key ?? 0) === 1;
+            $name = trim((string) ($field->name ?? ''));
+
+            if ($isPrimary && $name !== '') {
+                $primaryCandidates[] = $name;
+            }
+        }
+
+        if (count($primaryCandidates) !== 1) {
+            return null;
+        }
+
+        return $primaryCandidates[0];
     }
 
     public function runMigrateCommand()
@@ -551,6 +903,117 @@ class Setting extends BaseController
             'csrfToken' => csrf_token(),
             'csrfHash' => csrf_hash(),
         ])->setStatusCode($result['ok'] ? 200 : 500);
+    }
+
+    public function runSnakeCaseScenario()
+    {
+        if (! $this->canRunMaintenanceTools()) {
+            return $this->response->setJSON([
+                'ok' => false,
+                'message' => 'Anda tidak memiliki hak akses untuk menjalankan command maintenance.',
+                'output' => '',
+                'csrfToken' => csrf_token(),
+                'csrfHash' => csrf_hash(),
+            ])->setStatusCode(403);
+        }
+
+        $db = db_connect();
+        $before = $this->collectNonSnakeCaseColumns($db);
+
+        if ($before === []) {
+            return $this->response->setJSON([
+                'ok' => true,
+                'message' => 'Penamaan field sudah sesuai snake_case.',
+                'output' => 'Tidak ditemukan kolom non-snake_case pada tabel yang tersedia.',
+                'csrfToken' => csrf_token(),
+                'csrfHash' => csrf_hash(),
+            ]);
+        }
+
+        $migrationClasses = [
+            \App\Database\Migrations\MigrateLegacyLaporanHarianSchema::class,
+            \App\Database\Migrations\ForceNormalizeLaporanHarianColumns::class,
+            \App\Database\Migrations\NormalizeRemainingLaporanHarianSnakeCase::class,
+            \App\Database\Migrations\NormalizeTrnSaldoPelangganSnakeCase::class,
+        ];
+
+        $executed = [];
+        $autoRenamed = [];
+        $autoSkipped = [];
+
+        try {
+            $db->transException(true)->transStart();
+
+            foreach ($migrationClasses as $className) {
+                if (! class_exists($className)) {
+                    continue;
+                }
+
+                $migration = new $className($db, Database::forge($db));
+                if (! method_exists($migration, 'up')) {
+                    continue;
+                }
+
+                $migration->up();
+                $executed[] = $className;
+            }
+
+            [$autoRenamed, $autoSkipped] = $this->normalizeAllColumnsToSnakeCase($db);
+
+            $db->transComplete();
+        } catch (Throwable $e) {
+            log_message('error', 'SNAKE_CASE_SCENARIO_FAILED: {message}', ['message' => $e->getMessage()]);
+
+            return $this->response->setJSON([
+                'ok' => false,
+                'message' => 'Gagal menjalankan skenario snake_case.',
+                'output' => $e->getMessage(),
+                'csrfToken' => csrf_token(),
+                'csrfHash' => csrf_hash(),
+            ])->setStatusCode(500);
+        }
+
+        $after = $this->collectNonSnakeCaseColumns($db);
+
+        $formatIssues = static function (array $issues): string {
+            if ($issues === []) {
+                return '-';
+            }
+
+            $lines = [];
+            foreach ($issues as $table => $columns) {
+                $lines[] = $table . ': ' . implode(', ', $columns);
+            }
+
+            return implode("\n", $lines);
+        };
+
+        $output = implode("\n", [
+            'Kolom non-snake_case sebelum normalisasi:',
+            $formatIssues($before),
+            '',
+            'Migration scenario yang dijalankan:',
+            $executed === [] ? '-' : implode("\n", $executed),
+            '',
+            'Auto rename tambahan (generic snake_case):',
+            $autoRenamed === [] ? '-' : implode("\n", $autoRenamed),
+            '',
+            'Kolom yang dilewati (potensi konflik):',
+            $autoSkipped === [] ? '-' : implode("\n", $autoSkipped),
+            '',
+            'Kolom non-snake_case sesudah normalisasi:',
+            $formatIssues($after),
+        ]);
+
+        return $this->response->setJSON([
+            'ok' => true,
+            'message' => $after === []
+                ? 'Skenario snake_case berhasil dieksekusi (huruf kecil).'
+                : 'Skenario snake_case dijalankan, masih ada kolom yang belum snake_case.',
+            'output' => $output,
+            'csrfToken' => csrf_token(),
+            'csrfHash' => csrf_hash(),
+        ]);
     }
 
     public function runGitPullCommand()
@@ -965,6 +1428,232 @@ class Setting extends BaseController
         ];
     }
 
+    /**
+     * @return array<string,array<int,string>>
+     */
+    private function collectNonSnakeCaseColumns(BaseConnection $db): array
+    {
+        $tables = $db->listTables();
+        $issues = [];
+
+        foreach ($tables as $table) {
+            if (! is_string($table) || $table === '' || $table === 'migrations') {
+                continue;
+            }
+
+            try {
+                $fields = $db->getFieldData($table);
+            } catch (Throwable $e) {
+                continue;
+            }
+
+            $nonSnakeColumns = [];
+            foreach ($fields as $field) {
+                if (! is_object($field)) {
+                    continue;
+                }
+
+                $name = trim((string) ($field->name ?? ''));
+                if ($name === '') {
+                    continue;
+                }
+
+                if (preg_match('/^[a-z][a-z0-9_]*$/', $name) === 1) {
+                    continue;
+                }
+
+                $nonSnakeColumns[] = $name;
+            }
+
+            if ($nonSnakeColumns !== []) {
+                $issues[$table] = $nonSnakeColumns;
+            }
+        }
+
+        return $issues;
+    }
+
+    /**
+     * @return array{0: array<int,string>, 1: array<int,string>}
+     */
+    private function normalizeAllColumnsToSnakeCase(BaseConnection $db): array
+    {
+        $tables = $db->listTables();
+        $renamed = [];
+        $skipped = [];
+
+        foreach ($tables as $table) {
+            if (! is_string($table) || $table === '' || $table === 'migrations') {
+                continue;
+            }
+
+            try {
+                $rows = $db->query('SHOW FULL COLUMNS FROM `' . str_replace('`', '``', $table) . '`')->getResultArray();
+            } catch (Throwable $e) {
+                continue;
+            }
+
+            if (! is_array($rows) || $rows === []) {
+                continue;
+            }
+
+            // Refresh map each round because column names can change while iterating.
+            $refreshMap = static function () use ($db, $table): array {
+                $result = $db->query('SHOW COLUMNS FROM `' . str_replace('`', '``', $table) . '`')->getResultArray();
+                $map = [];
+                foreach ($result as $item) {
+                    $name = (string) ($item['Field'] ?? '');
+                    if ($name !== '') {
+                        $map[strtolower($name)] = $name;
+                    }
+                }
+                return $map;
+            };
+
+            $columnMap = $refreshMap();
+
+            foreach ($rows as $row) {
+                $oldNameRaw = trim((string) ($row['Field'] ?? ''));
+                if ($oldNameRaw === '') {
+                    continue;
+                }
+
+                $oldLookup = strtolower($oldNameRaw);
+                $actualOldName = $columnMap[$oldLookup] ?? $oldNameRaw;
+                $newName = $this->toSnakeCaseColumnName($actualOldName);
+
+                if ($newName === '' || $newName === $actualOldName) {
+                    continue;
+                }
+
+                $newLookup = strtolower($newName);
+                if (isset($columnMap[$newLookup]) && $columnMap[$newLookup] !== $actualOldName) {
+                    $skipped[] = $table . '.' . $actualOldName . ' -> ' . $newName . ' (target sudah ada)';
+                    continue;
+                }
+
+                $definition = $this->buildColumnDefinitionFromShowFull($row);
+
+                $ok = $this->renameColumnToSnakeCase($db, $table, $actualOldName, $newName, $definition);
+                if ($ok) {
+                    $renamed[] = $table . '.' . $actualOldName . ' -> ' . $newName;
+                    $columnMap = $refreshMap();
+                } else {
+                    $skipped[] = $table . '.' . $actualOldName . ' -> ' . $newName . ' (rename gagal)';
+                }
+            }
+        }
+
+        return [$renamed, $skipped];
+    }
+
+    private function toSnakeCaseColumnName(string $name): string
+    {
+        $value = trim($name);
+        if ($value === '') {
+            return '';
+        }
+
+        $value = preg_replace('/([a-z0-9])([A-Z])/', '$1_$2', $value) ?? $value;
+        $value = preg_replace('/[^A-Za-z0-9]+/', '_', $value) ?? $value;
+        $value = strtolower(trim($value, '_'));
+
+        if ($value === '') {
+            return '';
+        }
+
+        if (preg_match('/^[0-9]/', $value) === 1) {
+            $value = 'col_' . $value;
+        }
+
+        return $value;
+    }
+
+    /**
+     * @param array<string,mixed> $row
+     */
+    private function buildColumnDefinitionFromShowFull(array $row): string
+    {
+        $type = trim((string) ($row['Type'] ?? 'VARCHAR(255)'));
+        $null = strtoupper((string) ($row['Null'] ?? 'YES')) === 'NO' ? 'NOT NULL' : 'NULL';
+        $defaultValue = $row['Default'] ?? null;
+        $extra = trim((string) ($row['Extra'] ?? ''));
+
+        $parts = [$type, $null];
+
+        if ($defaultValue !== null) {
+            $defaultText = (string) $defaultValue;
+            $upperDefault = strtoupper($defaultText);
+
+            if (in_array($upperDefault, ['CURRENT_TIMESTAMP', 'CURRENT_TIMESTAMP()', 'NULL'], true)) {
+                $parts[] = 'DEFAULT ' . $upperDefault;
+            } else {
+                $parts[] = "DEFAULT '" . str_replace("'", "\\'", $defaultText) . "'";
+            }
+        }
+
+        if ($extra !== '') {
+            $parts[] = $extra;
+        }
+
+        return implode(' ', $parts);
+    }
+
+    private function renameColumnToSnakeCase(
+        BaseConnection $db,
+        string $table,
+        string $oldName,
+        string $newName,
+        string $definition
+    ): bool {
+        $escTable = str_replace('`', '``', $table);
+        $escOld = str_replace('`', '``', $oldName);
+        $escNew = str_replace('`', '``', $newName);
+
+        try {
+            if (strtolower($oldName) === strtolower($newName)) {
+                $tmp = 'tmp_' . substr(md5($table . '_' . $oldName . '_' . $newName), 0, 12);
+                $escTmp = str_replace('`', '``', $tmp);
+
+                $db->query(sprintf(
+                    'ALTER TABLE `%s` CHANGE COLUMN `%s` `%s` %s',
+                    $escTable,
+                    $escOld,
+                    $escTmp,
+                    $definition
+                ));
+
+                $db->query(sprintf(
+                    'ALTER TABLE `%s` CHANGE COLUMN `%s` `%s` %s',
+                    $escTable,
+                    $escTmp,
+                    $escNew,
+                    $definition
+                ));
+
+                return true;
+            }
+
+            $db->query(sprintf(
+                'ALTER TABLE `%s` CHANGE COLUMN `%s` `%s` %s',
+                $escTable,
+                $escOld,
+                $escNew,
+                $definition
+            ));
+
+            return true;
+        } catch (Throwable $e) {
+            log_message('warning', 'SNAKE_CASE_RENAME_FAILED {table}.{old}->{new}: {message}', [
+                'table' => $table,
+                'old' => $oldName,
+                'new' => $newName,
+                'message' => $e->getMessage(),
+            ]);
+            return false;
+        }
+    }
+
     private function isShellFunctionEnabled(string $functionName): bool
     {
         if (! function_exists($functionName)) {
@@ -1055,5 +1744,152 @@ class Setting extends BaseController
         }
 
         return '';
+    }
+
+    /**
+     * @return array<string,mixed>|null
+     */
+    private function getActiveSyncState(): ?array
+    {
+        $state = session(self::SYNC_STATE_KEY);
+        if (! is_array($state)) {
+            return null;
+        }
+
+        $tables = is_array($state['tables'] ?? null) ? $state['tables'] : [];
+        if ($tables === []) {
+            return null;
+        }
+
+        return $state;
+    }
+
+    /**
+     * @return array<int,array{name:string,row_count:int|null,target_exists:bool}>
+     */
+    private function getSyncTableOptions(): array
+    {
+        if (! $this->canRunMaintenanceTools() || ENVIRONMENT !== 'development') {
+            return [];
+        }
+
+        try {
+            $targetDb = db_connect();
+            $targetTables = $targetDb->listTables();
+        } catch (Throwable $e) {
+            log_message('warning', 'SYNC_TABLE_OPTIONS_FAILED: {message}', ['message' => $e->getMessage()]);
+            return [];
+        }
+
+        $targetFiltered = array_values(array_filter($targetTables, static function ($table): bool {
+            return is_string($table) && $table !== '' && $table !== 'migrations';
+        }));
+
+        sort($targetFiltered);
+
+        $targetMap = [];
+        foreach ($targetFiltered as $tableName) {
+            $targetMap[$tableName] = true;
+        }
+
+        $sourceConfig = $this->buildSyncSourceConfigFromEnv();
+        if ($sourceConfig === null) {
+            return array_map(static fn(string $table): array => [
+                'name' => $table,
+                'row_count' => null,
+                'target_exists' => true,
+            ], $targetFiltered);
+        }
+
+        try {
+            $sourceDb = Database::connect($sourceConfig, false);
+            $sourceTables = $sourceDb->listTables();
+        } catch (Throwable $e) {
+            log_message('warning', 'SYNC_SOURCE_TABLE_OPTIONS_FAILED: {message}', ['message' => $e->getMessage()]);
+            return array_map(static fn(string $table): array => [
+                'name' => $table,
+                'row_count' => null,
+                'target_exists' => true,
+            ], $targetFiltered);
+        }
+
+        $sourceNames = [];
+        foreach ($sourceTables as $tableName) {
+            if (! is_string($tableName) || $tableName === '' || $tableName === 'migrations') {
+                continue;
+            }
+
+            $sourceNames[] = $tableName;
+        }
+
+        $sourceNames = array_values(array_unique($sourceNames));
+        sort($sourceNames);
+
+        $rows = [];
+        foreach ($sourceNames as $tableName) {
+            $rowCount = null;
+
+            try {
+                $rowCount = (int) $sourceDb->table($tableName)->countAllResults();
+            } catch (Throwable $e) {
+                log_message('warning', 'SYNC_SOURCE_TABLE_COUNT_FAILED {table}: {message}', [
+                    'table' => $tableName,
+                    'message' => $e->getMessage(),
+                ]);
+            }
+
+            $rows[] = [
+                'name' => $tableName,
+                'row_count' => $rowCount,
+                'target_exists' => isset($targetMap[$tableName]),
+            ];
+        }
+
+        // If source contains no table metadata, keep development tables as fallback.
+        if ($rows === []) {
+            $rows = array_map(static fn(string $table): array => [
+                'name' => $table,
+                'row_count' => null,
+                'target_exists' => true,
+            ], $targetFiltered);
+        }
+
+        return $rows;
+    }
+
+    private function createTargetTableFromSource(BaseConnection $sourceDb, BaseConnection $targetDb, string $tableName): bool
+    {
+        $escapedTable = str_replace('`', '``', $tableName);
+
+        try {
+            $createRow = $sourceDb->query('SHOW CREATE TABLE `' . $escapedTable . '`')->getRowArray();
+        } catch (Throwable $e) {
+            log_message('warning', 'SYNC_CREATE_TABLE_READ_FAILED {table}: {message}', [
+                'table' => $tableName,
+                'message' => $e->getMessage(),
+            ]);
+            return false;
+        }
+
+        if (! is_array($createRow)) {
+            return false;
+        }
+
+        $createSql = (string) ($createRow['Create Table'] ?? '');
+        if ($createSql === '') {
+            return false;
+        }
+
+        try {
+            $targetDb->query($createSql);
+        } catch (Throwable $e) {
+            log_message('warning', 'SYNC_CREATE_TABLE_EXEC_FAILED {table}: {message}', [
+                'table' => $tableName,
+                'message' => $e->getMessage(),
+            ]);
+            return false;
+        }
+
+        return true;
     }
 }

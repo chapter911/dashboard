@@ -12,6 +12,7 @@ $shellExecAvailable = (bool) ($shellExecAvailable ?? false);
 $seederOptions = is_array($seederOptions ?? null) ? $seederOptions : ['pending' => [], 'all' => []];
 $pendingSeeders = is_array($seederOptions['pending'] ?? null) ? $seederOptions['pending'] : [];
 $allSeeders = is_array($seederOptions['all'] ?? null) ? $seederOptions['all'] : [];
+$syncTableOptions = is_array($syncTableOptions ?? null) ? $syncTableOptions : [];
 ?>
 
 <div class="row">
@@ -249,6 +250,9 @@ $allSeeders = is_array($seederOptions['all'] ?? null) ? $seederOptions['all'] : 
                         <button type="button" class="btn btn-outline-primary" id="btnRunSeeder">
                             <i class="ti ti-playstation-circle me-1"></i> Jalankan php spark db:seed
                         </button>
+                        <button type="button" class="btn btn-outline-warning" id="btnRunSnakeCaseScenario">
+                            <i class="ti ti-writing-sign me-1"></i> Cek & Eksekusi Snake Case
+                        </button>
                     </div>
                 </form>
 
@@ -285,8 +289,63 @@ $allSeeders = is_array($seederOptions['all'] ?? null) ? $seederOptions['all'] : 
                         </label>
                     </div>
 
+                    <div class="mb-3">
+                        <label class="form-label d-block mb-2">Mode Sinkronisasi Tabel</label>
+                        <div class="form-check">
+                            <input class="form-check-input" type="radio" name="sync_scope" id="sync_scope_all" value="all" checked>
+                            <label class="form-check-label" for="sync_scope_all">Seluruh tabel yang tersedia</label>
+                        </div>
+                        <div class="form-check">
+                            <input class="form-check-input" type="radio" name="sync_scope" id="sync_scope_selected" value="selected">
+                            <label class="form-check-label" for="sync_scope_selected">Pilih tabel tertentu</label>
+                        </div>
+                    </div>
+
+                    <div class="border rounded p-3 mb-3 d-none" id="syncSelectedTablesWrapper">
+                        <div class="d-flex justify-content-between align-items-center mb-2">
+                            <div class="small text-muted">Pilih satu atau beberapa tabel yang ingin disinkronkan.</div>
+                            <div class="form-check mb-0">
+                                <input class="form-check-input" type="checkbox" id="sync_select_all_tables">
+                                <label class="form-check-label small" for="sync_select_all_tables">Pilih semua</label>
+                            </div>
+                        </div>
+
+                        <div class="small text-muted mb-2" id="syncSelectedSummary">Belum ada tabel dipilih.</div>
+
+                        <div class="border rounded p-2" style="max-height: 220px; overflow: auto;">
+                            <?php if ($syncTableOptions === []): ?>
+                                <div class="small text-muted">Daftar tabel belum tersedia.</div>
+                            <?php else: ?>
+                                <?php foreach ($syncTableOptions as $tableOption): ?>
+                                    <?php
+                                    $tableName = (string) ($tableOption['name'] ?? '');
+                                    $rowCount = $tableOption['row_count'] ?? null;
+                                    $targetExists = (bool) ($tableOption['target_exists'] ?? true);
+                                    $rowCountLabel = $rowCount === null ? 'N/A' : number_format((int) $rowCount, 0, ',', '.');
+                                    ?>
+                                    <?php if ($tableName === '') continue; ?>
+                                    <div class="form-check">
+                                        <input class="form-check-input sync-table-checkbox" type="checkbox" value="<?= esc($tableName) ?>" id="sync_table_<?= esc($tableName) ?>" name="selected_tables[]" data-row-count="<?= esc((string) ($rowCount === null ? '' : (int) $rowCount)) ?>">
+                                        <label class="form-check-label d-flex justify-content-between align-items-center gap-2 flex-wrap" for="sync_table_<?= esc($tableName) ?>">
+                                            <code><?= esc($tableName) ?></code>
+                                            <span class="d-flex align-items-center gap-1">
+                                                <span class="badge bg-label-secondary">~<?= esc($rowCountLabel) ?> baris</span>
+                                                <?php if (! $targetExists): ?>
+                                                    <span class="badge bg-label-warning">Belum ada di dev, akan dibuat otomatis</span>
+                                                <?php endif; ?>
+                                            </span>
+                                        </label>
+                                    </div>
+                                <?php endforeach; ?>
+                            <?php endif; ?>
+                        </div>
+                    </div>
+
                     <button type="submit" class="btn btn-danger" id="btnStartSync">
                         <i class="ti ti-transfer me-1"></i> Mulai Sinkronisasi
+                    </button>
+                    <button type="button" class="btn btn-outline-warning ms-2 d-none" id="btnResumeSync">
+                        <i class="ti ti-player-track-next me-1"></i> Lanjutkan Sinkronisasi
                     </button>
                 </form>
 
@@ -295,6 +354,7 @@ $allSeeders = is_array($seederOptions['all'] ?? null) ? $seederOptions['all'] : 
                         <span class="small text-muted" id="syncStatusText">Memulai sinkronisasi...</span>
                         <span class="small fw-semibold" id="syncPercentText">0%</span>
                     </div>
+                    <div class="small text-muted mb-2" id="syncMetaText"></div>
                     <div class="progress" style="height: 12px;">
                         <div
                             id="syncProgressBar"
@@ -324,10 +384,19 @@ $allSeeders = is_array($seederOptions['all'] ?? null) ? $seederOptions['all'] : 
         const syncProgressBar = document.getElementById('syncProgressBar');
         const syncPercentText = document.getElementById('syncPercentText');
         const syncStatusText = document.getElementById('syncStatusText');
+        const syncMetaText = document.getElementById('syncMetaText');
         const syncButton = document.getElementById('btnStartSync');
+        const syncResumeButton = document.getElementById('btnResumeSync');
+        const selectedTableWrapper = document.getElementById('syncSelectedTablesWrapper');
+        const syncSelectedSummary = document.getElementById('syncSelectedSummary');
+        const syncScopeInputs = document.querySelectorAll('input[name="sync_scope"]');
+        const syncTableCheckboxes = document.querySelectorAll('.sync-table-checkbox');
+        const syncSelectAllTables = document.getElementById('sync_select_all_tables');
+        const csrfHeaderName = '<?= esc(csrf_header()) ?>';
         const maintenanceForm = document.getElementById('maintenanceToolForm');
         const btnRunMigrate = document.getElementById('btnRunMigrate');
         const btnRunSeeder = document.getElementById('btnRunSeeder');
+        const btnRunSnakeCaseScenario = document.getElementById('btnRunSnakeCaseScenario');
         const btnRunGitPull = document.getElementById('btnRunGitPull');
         const commandOutputWrapper = document.getElementById('commandOutputWrapper');
         const commandStatusText = document.getElementById('commandStatusText');
@@ -377,6 +446,10 @@ $allSeeders = is_array($seederOptions['all'] ?? null) ? $seederOptions['all'] : 
                 btnRunSeeder.disabled = disabled;
             }
 
+            if (btnRunSnakeCaseScenario) {
+                btnRunSnakeCaseScenario.disabled = disabled;
+            }
+
             if (btnRunGitPull) {
                 btnRunGitPull.disabled = disabled;
             }
@@ -399,6 +472,45 @@ $allSeeders = is_array($seederOptions['all'] ?? null) ? $seederOptions['all'] : 
             return {
                 name: hiddenInput.name,
                 value: hiddenInput.value || ''
+            };
+        }
+
+        function getSyncCsrfEntry() {
+            return getCsrfEntry(syncForm);
+        }
+
+        function buildSyncRequestPayload() {
+            const formData = new FormData(syncForm);
+            const csrfEntry = getSyncCsrfEntry();
+
+            if (csrfEntry && csrfEntry.name) {
+                formData.set(csrfEntry.name, csrfEntry.value);
+            }
+
+            const headers = {
+                'X-Requested-With': 'XMLHttpRequest'
+            };
+
+            if (csrfEntry && csrfEntry.value) {
+                headers[csrfHeaderName] = csrfEntry.value;
+                headers['X-CSRF-TOKEN'] = csrfEntry.value;
+            }
+
+            return {
+                formData: formData,
+                headers: headers,
+            };
+        }
+
+        async function parseResponsePayload(response) {
+            const contentType = String(response.headers.get('content-type') || '');
+            if (contentType.indexOf('application/json') !== -1) {
+                return await response.json();
+            }
+
+            return {
+                ok: false,
+                message: (await response.text()) || 'Respons server tidak valid.',
             };
         }
 
@@ -499,6 +611,7 @@ $allSeeders = is_array($seederOptions['all'] ?? null) ? $seederOptions['all'] : 
                     body: payload,
                     headers: {
                         'X-Requested-With': 'XMLHttpRequest',
+                        [csrfHeaderName]: csrfEntry ? csrfEntry.value : '',
                         'X-CSRF-TOKEN': csrfEntry ? csrfEntry.value : ''
                     }
                 });
@@ -559,46 +672,158 @@ $allSeeders = is_array($seederOptions['all'] ?? null) ? $seederOptions['all'] : 
             }
         }
 
-        async function processSyncStep() {
-            if (!syncForm) {
+        function setSyncMeta(meta) {
+            if (!syncMetaText) {
                 return;
             }
 
-            const formData = new FormData(syncForm);
-            const response = await fetch('<?= site_url('setting/application/sync/step') ?>', {
-                method: 'POST',
-                body: formData,
-                headers: {
-                    'X-Requested-With': 'XMLHttpRequest'
-                }
-            });
-
-            const data = await response.json();
-            updateCsrfToken(data.csrfToken, data.csrfHash);
-
-            if (!response.ok || !data.ok) {
-                throw new Error(data.message || 'Sinkronisasi gagal diproses.');
+            if (!meta || typeof meta !== 'object') {
+                syncMetaText.textContent = '';
+                return;
             }
 
-            setSyncProgress(data.progress || 0, data.message || 'Sinkronisasi berjalan...');
+            const current = meta.current_table || null;
+            if (!current || !current.name) {
+                syncMetaText.textContent = '';
+                return;
+            }
 
-            if (data.done) {
-                if (syncButton) {
-                    syncButton.disabled = false;
+            const tablePosition = (Number(meta.table_index || 0) + 1) + '/' + Number(meta.total_tables || 0);
+            const batchSize = Number(current.batch_size || 0).toLocaleString('id-ID');
+            const offset = Number(current.offset || 0).toLocaleString('id-ID');
+            const rowCount = Number(current.row_count || 0).toLocaleString('id-ID');
+
+            syncMetaText.textContent =
+                'Tabel: ' + String(current.name) +
+                ' | Posisi: ' + tablePosition +
+                ' | Batch aktif: ' + batchSize +
+                ' | Progress tabel: ' + offset + '/' + rowCount;
+        }
+
+        function setSyncButtonsState(isRunning) {
+            if (syncButton) {
+                syncButton.disabled = isRunning;
+            }
+
+            if (syncResumeButton) {
+                syncResumeButton.disabled = isRunning;
+            }
+        }
+
+        function setResumeVisible(visible) {
+            if (!syncResumeButton) {
+                return;
+            }
+
+            syncResumeButton.classList.toggle('d-none', !visible);
+        }
+
+        function getSelectedSyncScope() {
+            const checkedScope = document.querySelector('input[name="sync_scope"]:checked');
+            return checkedScope ? String(checkedScope.value || 'all') : 'all';
+        }
+
+        function syncSelectedTableUiState() {
+            const isSelectedScope = getSelectedSyncScope() === 'selected';
+
+            if (selectedTableWrapper) {
+                selectedTableWrapper.classList.toggle('d-none', !isSelectedScope);
+            }
+
+            syncTableCheckboxes.forEach(function (checkbox) {
+                checkbox.disabled = !isSelectedScope;
+            });
+
+            if (syncSelectAllTables) {
+                syncSelectAllTables.disabled = !isSelectedScope;
+                if (!isSelectedScope) {
+                    syncSelectAllTables.checked = false;
                 }
+            }
+
+            updateSelectedTablesSummary();
+        }
+
+        function updateSelectedTablesSummary() {
+            if (!syncSelectedSummary) {
+                return;
+            }
+
+            const selectedRows = Array.from(syncTableCheckboxes).filter(function (checkbox) {
+                return !checkbox.disabled && checkbox.checked;
+            });
+
+            const selectedCount = selectedRows.length;
+            const totalRows = selectedRows.reduce(function (sum, checkbox) {
+                const value = Number(checkbox.getAttribute('data-row-count') || 0);
+                return sum + (Number.isFinite(value) ? value : 0);
+            }, 0);
+
+            if (selectedCount < 1) {
+                syncSelectedSummary.textContent = 'Belum ada tabel dipilih.';
+                return;
+            }
+
+            syncSelectedSummary.textContent = selectedCount + ' tabel dipilih, estimasi ' + totalRows.toLocaleString('id-ID') + ' baris source.';
+        }
+
+        async function processSyncStep() {
+            try {
+                if (!syncForm) {
+                    return;
+                }
+
+                const requestPayload = buildSyncRequestPayload();
+                const response = await fetch('<?= site_url('setting/application/sync/step') ?>', {
+                    method: 'POST',
+                    body: requestPayload.formData,
+                    headers: requestPayload.headers
+                });
+
+                const data = await parseResponsePayload(response);
+                updateCsrfToken(data.csrfToken, data.csrfHash);
+
+                if (!response.ok || !data.ok) {
+                    throw new Error(data.message || 'Sinkronisasi gagal diproses.');
+                }
+
+                setSyncProgress(data.progress || 0, data.message || 'Sinkronisasi berjalan...');
+                setSyncMeta(data.syncMeta || null);
+
+                if (data.done) {
+                    setSyncButtonsState(false);
+                    setResumeVisible(false);
+
+                    if (window.Swal) {
+                        Swal.fire({
+                            icon: 'success',
+                            title: 'Selesai',
+                            text: data.message || 'Sinkronisasi berhasil selesai.'
+                        });
+                    }
+
+                    return;
+                }
+
+                window.setTimeout(processSyncStep, 150);
+            } catch (error) {
+                setSyncButtonsState(false);
+                setResumeVisible(true);
+
+                if (syncProgressWrapper) {
+                    syncProgressWrapper.classList.remove('d-none');
+                }
+
+                setSyncProgress(Number(syncProgressBar ? syncProgressBar.getAttribute('aria-valuenow') : 0), 'Sinkronisasi terhenti. Gunakan tombol Lanjutkan Sinkronisasi.');
 
                 if (window.Swal) {
                     Swal.fire({
-                        icon: 'success',
-                        title: 'Selesai',
-                        text: data.message || 'Sinkronisasi berhasil selesai.'
+                        icon: 'warning',
+                        title: 'Sinkronisasi terhenti',
+                        text: error && error.message ? error.message : 'Proses berhenti sementara. Anda bisa melanjutkannya.'
                     });
                 }
-
-                return;
             }
-
-            window.setTimeout(processSyncStep, 150);
         }
 
         async function startProductionSync(event) {
@@ -608,23 +833,40 @@ $allSeeders = is_array($seederOptions['all'] ?? null) ? $seederOptions['all'] : 
                 return;
             }
 
-            syncButton.disabled = true;
+            const selectedScope = getSelectedSyncScope();
+            if (selectedScope === 'selected') {
+                const selectedCount = Array.from(syncTableCheckboxes).filter(function (checkbox) {
+                    return checkbox.checked;
+                }).length;
+
+                if (selectedCount < 1) {
+                    if (window.Swal) {
+                        Swal.fire({
+                            icon: 'warning',
+                            title: 'Tabel belum dipilih',
+                            text: 'Pilih minimal satu tabel untuk sinkronisasi.'
+                        });
+                    }
+                    return;
+                }
+            }
+
+            setSyncButtonsState(true);
+            setResumeVisible(false);
             if (syncProgressWrapper) {
                 syncProgressWrapper.classList.remove('d-none');
             }
             setSyncProgress(0, 'Memvalidasi koneksi production...');
 
             try {
-                const formData = new FormData(syncForm);
+                const requestPayload = buildSyncRequestPayload();
                 const response = await fetch('<?= site_url('setting/application/sync/init') ?>', {
                     method: 'POST',
-                    body: formData,
-                    headers: {
-                        'X-Requested-With': 'XMLHttpRequest'
-                    }
+                    body: requestPayload.formData,
+                    headers: requestPayload.headers
                 });
 
-                const data = await response.json();
+                const data = await parseResponsePayload(response);
                 updateCsrfToken(data.csrfToken, data.csrfHash);
 
                 if (!response.ok || !data.ok) {
@@ -632,11 +874,11 @@ $allSeeders = is_array($seederOptions['all'] ?? null) ? $seederOptions['all'] : 
                 }
 
                 setSyncProgress(0, data.message || 'Sinkronisasi dimulai...');
+                setSyncMeta(data.syncMeta || null);
                 processSyncStep();
             } catch (error) {
-                if (syncButton) {
-                    syncButton.disabled = false;
-                }
+                setSyncButtonsState(false);
+                setResumeVisible(true);
 
                 if (window.Swal) {
                     Swal.fire({
@@ -647,6 +889,82 @@ $allSeeders = is_array($seederOptions['all'] ?? null) ? $seederOptions['all'] : 
                 }
 
                 setSyncProgress(0, 'Gagal memulai sinkronisasi.');
+            }
+        }
+
+        async function resumeProductionSync() {
+            if (!syncForm) {
+                return;
+            }
+
+            setSyncButtonsState(true);
+            if (syncProgressWrapper) {
+                syncProgressWrapper.classList.remove('d-none');
+            }
+
+            try {
+                const requestPayload = buildSyncRequestPayload();
+                const response = await fetch('<?= site_url('setting/application/sync/resume') ?>', {
+                    method: 'POST',
+                    body: requestPayload.formData,
+                    headers: requestPayload.headers
+                });
+
+                const data = await parseResponsePayload(response);
+                updateCsrfToken(data.csrfToken, data.csrfHash);
+
+                if (!response.ok || !data.ok) {
+                    throw new Error(data.message || 'Tidak ada proses yang dapat dilanjutkan.');
+                }
+
+                setResumeVisible(false);
+                setSyncProgress(data.progress || 0, data.message || 'Melanjutkan sinkronisasi...');
+                setSyncMeta(data.syncMeta || null);
+                processSyncStep();
+            } catch (error) {
+                setSyncButtonsState(false);
+                setResumeVisible(true);
+
+                if (window.Swal) {
+                    Swal.fire({
+                        icon: 'error',
+                        title: 'Gagal melanjutkan',
+                        text: error && error.message ? error.message : 'Tidak dapat melanjutkan sinkronisasi.'
+                    });
+                }
+            }
+        }
+
+        async function loadSyncState() {
+            if (!syncForm) {
+                return;
+            }
+
+            try {
+                const response = await fetch('<?= site_url('setting/application/sync/state') ?>', {
+                    method: 'GET',
+                    headers: {
+                        'X-Requested-With': 'XMLHttpRequest'
+                    }
+                });
+
+                const data = await response.json();
+                updateCsrfToken(data.csrfToken, data.csrfHash);
+
+                if (!response.ok || !data.ok || !data.active) {
+                    setResumeVisible(false);
+                    return;
+                }
+
+                if (syncProgressWrapper) {
+                    syncProgressWrapper.classList.remove('d-none');
+                }
+
+                setSyncProgress(data.progress || 0, data.message || 'Terdapat proses sinkronisasi yang belum selesai.');
+                setSyncMeta(data.syncMeta || null);
+                setResumeVisible(true);
+            } catch (error) {
+                setResumeVisible(false);
             }
         }
 
@@ -661,6 +979,57 @@ $allSeeders = is_array($seederOptions['all'] ?? null) ? $seederOptions['all'] : 
         if (syncForm) {
             syncForm.addEventListener('submit', startProductionSync);
         }
+
+        if (syncResumeButton) {
+            syncResumeButton.addEventListener('click', resumeProductionSync);
+        }
+
+        if (syncScopeInputs.length > 0) {
+            syncScopeInputs.forEach(function (input) {
+                input.addEventListener('change', syncSelectedTableUiState);
+            });
+        }
+
+        if (syncSelectAllTables) {
+            syncSelectAllTables.addEventListener('change', function () {
+                const checked = !!syncSelectAllTables.checked;
+                syncTableCheckboxes.forEach(function (checkbox) {
+                    if (!checkbox.disabled) {
+                        checkbox.checked = checked;
+                    }
+                });
+
+                updateSelectedTablesSummary();
+            });
+        }
+
+        if (syncTableCheckboxes.length > 0) {
+            syncTableCheckboxes.forEach(function (checkbox) {
+                checkbox.addEventListener('change', function () {
+                    if (!syncSelectAllTables || checkbox.disabled) {
+                        return;
+                    }
+
+                    const enabledCheckboxes = Array.from(syncTableCheckboxes).filter(function (item) {
+                        return !item.disabled;
+                    });
+
+                    if (enabledCheckboxes.length === 0) {
+                        syncSelectAllTables.checked = false;
+                        return;
+                    }
+
+                    syncSelectAllTables.checked = enabledCheckboxes.every(function (item) {
+                        return item.checked;
+                    });
+
+                    updateSelectedTablesSummary();
+                });
+            });
+        }
+
+        syncSelectedTableUiState();
+        loadSyncState();
 
         if (btnRunMigrate) {
             btnRunMigrate.addEventListener('click', function () {
@@ -694,6 +1063,12 @@ $allSeeders = is_array($seederOptions['all'] ?? null) ? $seederOptions['all'] : 
                 runMaintenanceCommand('<?= site_url('setting/application/tools/seed') ?>', {
                     seeder_class: seederName
                 });
+            });
+        }
+
+        if (btnRunSnakeCaseScenario) {
+            btnRunSnakeCaseScenario.addEventListener('click', function () {
+                runMaintenanceCommand('<?= site_url('setting/application/tools/snake-case') ?>');
             });
         }
     })();

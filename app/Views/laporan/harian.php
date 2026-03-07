@@ -6,12 +6,16 @@ $units = is_array($units ?? null) ? $units : [];
 $alasanOptions = is_array($alasanOptions ?? null) ? $alasanOptions : [];
 $dayaOptions = is_array($dayaOptions ?? null) ? $dayaOptions : [];
 $filters = is_array($filters ?? null) ? $filters : [];
-$rows = is_array($rows ?? null) ? $rows : [];
-$page = (int) ($page ?? 1);
-$perPage = (int) ($perPage ?? 50);
-$total = (int) ($total ?? 0);
-$pager = $pager ?? null;
 ?>
+
+<link rel="stylesheet" href="<?= base_url('assets/vendor/libs/select2/select2.css') ?>">
+<link rel="stylesheet" href="<?= base_url('assets/vendor/libs/datatables-bs5/datatables.bootstrap5.css') ?>">
+<style>
+    .select2-container--default .select2-selection--multiple {
+        overflow-y: auto;
+        max-height: calc(2.25rem + 2px);
+    }
+</style>
 
 <div class="row">
     <div class="col-12">
@@ -27,10 +31,11 @@ $pager = $pager ?? null;
 <div class="card mb-4">
     <div class="card-header d-flex justify-content-between align-items-center">
         <h5 class="mb-0">Filter Laporan Harian</h5>
-        <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#importModal" type="button">Upload CSV</button>
+        <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#importModal" type="button">Upload Data</button>
     </div>
     <div class="card-body">
-        <form method="get" action="<?= site_url('C_Laporan/Harian') ?>" class="row g-3">
+        <form method="post" action="<?= site_url('C_Laporan/Harian/data') ?>" class="row g-3" id="harianFilterForm">
+            <?= csrf_field() ?>
             <div class="col-md-3">
                 <label class="form-label">Unit</label>
                 <select class="form-select" name="unit">
@@ -71,26 +76,18 @@ $pager = $pager ?? null;
                     <?php endforeach; ?>
                 </select>
             </div>
-            <div class="col-md-4">
+            <div class="col-md-6">
                 <label class="form-label">Alasan Ganti Meter (multi)</label>
-                <select class="form-select" name="alasan[]" multiple size="5">
+                <select class="form-select select2 w-100" name="alasan[]" multiple data-placeholder="Seluruh Alasan">
                     <?php foreach ($alasanOptions as $alasan): ?>
                         <?php $val = (string) ($alasan['alasan_ganti_meter'] ?? ''); if ($val === '') continue; ?>
                         <option value="<?= esc($val) ?>" <?= in_array($val, $filters['alasan'] ?? [], true) ? 'selected' : '' ?>><?= esc($val) ?></option>
                     <?php endforeach; ?>
                 </select>
             </div>
-            <div class="col-md-4">
+            <div class="col-md-6">
                 <label class="form-label">Tanggal Peremajaan</label>
                 <input class="form-control" type="date" name="tgl_peremajaan" value="<?= esc((string) ($filters['tgl_peremajaan'] ?? '')) ?>">
-            </div>
-            <div class="col-md-4">
-                <label class="form-label">Cari</label>
-                <input class="form-control" type="text" name="search" value="<?= esc((string) ($filters['search'] ?? '')) ?>" placeholder="IDPEL / Nama / No Agenda">
-            </div>
-            <div class="col-12 d-flex gap-2">
-                <button class="btn btn-primary" type="submit">Terapkan</button>
-                <a class="btn btn-label-secondary" href="<?= site_url('C_Laporan/Harian') ?>">Reset</a>
             </div>
         </form>
     </div>
@@ -99,46 +96,82 @@ $pager = $pager ?? null;
 <div class="card">
     <div class="card-header d-flex justify-content-between align-items-center">
         <h5 class="mb-0">Data Laporan Harian</h5>
-        <small class="text-muted">Total data: <?= esc((string) $total) ?></small>
     </div>
     <div class="table-responsive text-nowrap">
-        <table class="table table-hover table-sm mb-0">
+        <table class="table table-hover table-sm mb-0" id="harianTable">
             <thead>
                 <tr>
-                    <th>No Agenda</th>
-                    <th>Unit AP</th>
+                    <th>NOAGENDA</th>
+                    <th>UNITUPI</th>
+                    <th>UNITAP</th>
+                    <th>UNITUP</th>
+                    <th>NOMORPDL</th>
                     <th>IDPEL</th>
-                    <th>Nama</th>
-                    <th>Tarif</th>
-                    <th>Daya</th>
-                    <th>Alasan Ganti Meter</th>
-                    <th>Tgl Remaja</th>
+                    <th>NAMA</th>
+                    <th>ALAMAT</th>
+                    <th>KDDK</th>
+                    <th>NAMA_PROV</th>
+                    <th>NAMA_KAB</th>
+                    <th>NAMA_KEC</th>
+                    <th>NAMA_KEL</th>
+                    <th>TARIF</th>
+                    <th>DAYA</th>
+                    <th>KDPT</th>
+                    <th>KDPT_2</th>
+                    <th>JENIS_MK</th>
+                    <th>RP_TOKEN</th>
+                    <th>RPTOTAL</th>
+                    <th>TGLPENGADUAN</th>
+                    <th>TGLTINDAKANPENGADUAN</th>
+                    <th>TGLBAYAR</th>
+                    <th>TGLAKTIVASI</th>
+                    <th>TGLPENANGGUHAN</th>
+                    <th>TGLRESTITUSI</th>
+                    <th>TGLREMAJA</th>
+                    <th>TGLNYALA</th>
+                    <th>TGLBATAL</th>
+                    <th>STATUS_PERMOHONAN</th>
+                    <th>ID_GANTI_METER</th>
+                    <th>ALASAN_GANTI_METER</th>
+                    <th>ALASAN_PENANGGUHAN</th>
+                    <th>KETERANGAN_ALASAN_PENANGGUHAN</th>
+                    <th>NO_METER_BARU</th>
+                    <th>MERK_METER_BARU</th>
+                    <th>TYPE_METER_BARU</th>
+                    <th>THTERA_METER_BARU</th>
+                    <th>THBUAT_METER_BARU</th>
+                    <th>NO_METER_LAMA</th>
+                    <th>MERK_METER_LAMA</th>
+                    <th>TYPE_METER_LAMA</th>
+                    <th>THTERA_METER_LAMA</th>
+                    <th>THBUAT_METER_LAMA</th>
+                    <th>PETUGASPENGADUAN</th>
+                    <th>PETUGASTINDAKANPENGADUAN</th>
+                    <th>PETUGASAKTIVASI</th>
+                    <th>PETUGASPENANGGUHAN</th>
+                    <th>PETUGASRESTITUSI</th>
+                    <th>PETUGASREMAJA</th>
+                    <th>PETUGASBATAL</th>
+                    <th>TGLREKAP</th>
+                    <th>KDPEMBMETER</th>
+                    <th>CT_PRIMER_KWH</th>
+                    <th>CT_SEKUNDER_KWH</th>
+                    <th>PT_PRIMER_KWH</th>
+                    <th>PT_SEKUNDER_KWH</th>
+                    <th>KONSTANTA_KWH</th>
+                    <th>FAKMKWH</th>
+                    <th>TYPE_CT_KWH</th>
+                    <th>CT_PRIMER_KVARH</th>
+                    <th>CT_SEKUNDER_KVARH</th>
+                    <th>PT_PRIMER_KVARH</th>
+                    <th>PT_SEKUNDER_KVARH</th>
+                    <th>KONSTANTA_KVARH</th>
+                    <th>FAKMKVARH</th>
                 </tr>
             </thead>
-            <tbody>
-                <?php if ($rows === []): ?>
-                    <tr><td colspan="8" class="text-center text-muted">Tidak ada data.</td></tr>
-                <?php endif; ?>
-                <?php foreach ($rows as $row): ?>
-                    <tr>
-                        <td><?= esc((string) ($row['no_agenda'] ?? '-')) ?></td>
-                        <td><?= esc((string) ($row['unit_ap'] ?? '-')) ?></td>
-                        <td><?= esc((string) ($row['idpel'] ?? '-')) ?></td>
-                        <td><?= esc((string) ($row['nama'] ?? '-')) ?></td>
-                        <td><?= esc((string) ($row['tarif'] ?? '-')) ?></td>
-                        <td><?= esc((string) ($row['daya'] ?? '-')) ?></td>
-                        <td><?= esc((string) ($row['alasan_ganti_meter'] ?? '-')) ?></td>
-                        <td><?= esc((string) ($row['tgl_remaja'] ?? '-')) ?></td>
-                    </tr>
-                <?php endforeach; ?>
-            </tbody>
+            <tbody></tbody>
         </table>
     </div>
-    <?php if ($pager): ?>
-        <div class="card-body pt-3">
-            <?= $pager->links() ?>
-        </div>
-    <?php endif; ?>
 </div>
 
 <div class="modal fade" id="importModal" tabindex="-1" aria-hidden="true">
@@ -156,10 +189,185 @@ $pager = $pager ?? null;
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-label-secondary" data-bs-dismiss="modal">Batal</button>
-                    <button type="submit" class="btn btn-primary">Upload</button>
+                    <button type="submit" class="btn btn-primary">Upload Data</button>
                 </div>
             </form>
         </div>
     </div>
 </div>
+<?= $this->endSection() ?>
+
+<?= $this->section('scripts') ?>
+<script src="<?= base_url('assets/vendor/libs/select2/select2.js') ?>"></script>
+<script src="<?= base_url('assets/vendor/libs/datatables-bs5/datatables-bootstrap5.js') ?>"></script>
+<script>
+    $(function () {
+        var $form = $('#harianFilterForm');
+        var filterTimer = null;
+        var swalActive = false;
+
+        $('.select2').select2({
+            width: '100%',
+            placeholder: 'Seluruh Alasan'
+        });
+
+        var showLoading = function () {
+            if (typeof Swal === 'undefined') {
+                return;
+            }
+
+            swalActive = true;
+            Swal.fire({
+                title: 'Mohon Tunggu',
+                html: 'Mengambil data laporan harian...',
+                allowOutsideClick: false,
+                showConfirmButton: false,
+                didOpen: function () {
+                    Swal.showLoading();
+                }
+            });
+        };
+
+        var hideLoading = function () {
+            if (! swalActive || typeof Swal === 'undefined') {
+                return;
+            }
+
+            Swal.close();
+            swalActive = false;
+        };
+
+        var table = $('#harianTable').DataTable({
+            autoWidth: false,
+            processing: true,
+            serverSide: true,
+            pageLength: 10,
+            lengthMenu: [10, 25, 50, 100],
+            searching: false,
+            scrollX: true,
+            order: [[26, 'desc']],
+            ajax: {
+                url: '<?= site_url('C_Laporan/Harian/data') ?>',
+                type: 'POST',
+                data: function (d) {
+                    d.unit = $form.find('select[name="unit"]').val();
+                    d.alasan = $form.find('select[name="alasan[]"]').val();
+                    d.tahun_meter_lama = $form.find('select[name="tahun_meter_lama"]').val();
+                    d.tarif = $form.find('select[name="tarif"]').val();
+                    d.fasa = $form.find('select[name="fasa"]').val();
+                    d.tgl_peremajaan = $form.find('input[name="tgl_peremajaan"]').val();
+                    d.search = '';
+                    d['<?= esc(csrf_token()) ?>'] = $form.find('input[name="<?= esc(csrf_token()) ?>"]').val();
+                },
+                dataSrc: function (json) {
+                    return json.data || [];
+                },
+                error: function () {
+                    hideLoading();
+                    if (typeof Swal !== 'undefined') {
+                        Swal.fire({
+                            icon: 'error',
+                            title: 'Gagal',
+                            text: 'Gagal memuat data laporan harian.'
+                        });
+                    }
+                }
+            },
+            columns: [
+                { data: 'no_agenda', defaultContent: '-' },
+                { data: 'unit_upi', defaultContent: '-' },
+                { data: 'unit_ap', defaultContent: '-' },
+                { data: 'unit_up', defaultContent: '-' },
+                { data: 'nomor_pdl', defaultContent: '-' },
+                { data: 'idpel', defaultContent: '-' },
+                { data: 'nama', defaultContent: '-' },
+                { data: 'alamat', defaultContent: '-' },
+                { data: 'kddk', defaultContent: '-' },
+                { data: 'nama_prov', defaultContent: '-' },
+                { data: 'nama_kab', defaultContent: '-' },
+                { data: 'nama_kec', defaultContent: '-' },
+                { data: 'nama_kel', defaultContent: '-' },
+                { data: 'tarif', defaultContent: '-' },
+                { data: 'daya', defaultContent: '-' },
+                { data: 'kdpt', defaultContent: '-' },
+                { data: 'kdpt_2', defaultContent: '-' },
+                { data: 'jenis_mk', defaultContent: '-' },
+                { data: 'rp_token', defaultContent: '-' },
+                { data: 'rptotal', defaultContent: '-' },
+                { data: 'tgl_pengaduan', defaultContent: '-' },
+                { data: 'tgl_tindakan_pengaduan', defaultContent: '-' },
+                { data: 'tgl_bayar', defaultContent: '-' },
+                { data: 'tgl_aktivasi', defaultContent: '-' },
+                { data: 'tgl_penangguhan', defaultContent: '-' },
+                { data: 'tgl_restitusi', defaultContent: '-' },
+                { data: 'tgl_remaja', defaultContent: '-' },
+                { data: 'tgl_nyala', defaultContent: '-' },
+                { data: 'tgl_batal', defaultContent: '-' },
+                { data: 'status_permohonan', defaultContent: '-' },
+                { data: 'id_ganti_meter', defaultContent: '-' },
+                { data: 'alasan_ganti_meter', defaultContent: '-' },
+                { data: 'alasan_penangguhan', defaultContent: '-' },
+                { data: 'keterangan_alasan_penangguhan', defaultContent: '-' },
+                { data: 'no_meter_baru', defaultContent: '-' },
+                { data: 'merk_meter_baru', defaultContent: '-' },
+                { data: 'type_meter_baru', defaultContent: '-' },
+                { data: 'thtera_meter_baru', defaultContent: '-' },
+                { data: 'thbuat_meter_baru', defaultContent: '-' },
+                { data: 'no_meter_lama', defaultContent: '-' },
+                { data: 'merk_meter_lama', defaultContent: '-' },
+                { data: 'type_meter_lama', defaultContent: '-' },
+                { data: 'thtera_meter_lama', defaultContent: '-' },
+                { data: 'thbuat_meter_lama', defaultContent: '-' },
+                { data: 'petugas_pengaduan', defaultContent: '-' },
+                { data: 'petugas_tindakan_pengaduan', defaultContent: '-' },
+                { data: 'petugas_aktivasi', defaultContent: '-' },
+                { data: 'petugas_penangguhan', defaultContent: '-' },
+                { data: 'petugas_restitusi', defaultContent: '-' },
+                { data: 'petugas_remaja', defaultContent: '-' },
+                { data: 'petugas_batal', defaultContent: '-' },
+                { data: 'tgl_rekap', defaultContent: '-' },
+                { data: 'kd_pemb_meter', defaultContent: '-' },
+                { data: 'ct_primer_kwh', defaultContent: '-' },
+                { data: 'ct_sekunder_kwh', defaultContent: '-' },
+                { data: 'pt_primer_kwh', defaultContent: '-' },
+                { data: 'pt_sekunder_kwh', defaultContent: '-' },
+                { data: 'konstanta_kwh', defaultContent: '-' },
+                { data: 'fakm_kwh', defaultContent: '-' },
+                { data: 'type_ct_kwh', defaultContent: '-' },
+                { data: 'ct_primer_kvarh', defaultContent: '-' },
+                { data: 'ct_sekunder_kvarh', defaultContent: '-' },
+                { data: 'pt_primer_kvarh', defaultContent: '-' },
+                { data: 'pt_sekunder_kvarh', defaultContent: '-' },
+                { data: 'konstanta_kvarh', defaultContent: '-' },
+                { data: 'fakm_kvarh', defaultContent: '-' }
+            ]
+        });
+
+        $('#harianTable').on('preXhr.dt', function () {
+            showLoading();
+        });
+
+        $('#harianTable').on('xhr.dt', function (_e, _settings, _json, xhr) {
+            var freshCsrf = xhr ? xhr.getResponseHeader('X-CSRF-TOKEN') : null;
+            if (freshCsrf) {
+                $form.find('input[name="<?= esc(csrf_token()) ?>"]').val(freshCsrf);
+            }
+            hideLoading();
+        });
+
+        var queueReload = function (delayMs) {
+            if (filterTimer !== null) {
+                window.clearTimeout(filterTimer);
+            }
+
+            filterTimer = window.setTimeout(function () {
+                table.ajax.reload();
+            }, delayMs);
+        };
+
+        $form.on('change', 'select, input[type="date"]', function () {
+            queueReload(200);
+        });
+    });
+</script>
 <?= $this->endSection() ?>

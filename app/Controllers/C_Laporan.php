@@ -3,7 +3,9 @@
 namespace App\Controllers;
 
 use App\Models\LaporanModel;
+use CodeIgniter\Database\BaseConnection;
 use CodeIgniter\HTTP\RedirectResponse;
+use CodeIgniter\HTTP\ResponseInterface;
 use Throwable;
 
 class C_Laporan extends BaseController
@@ -79,10 +81,12 @@ class C_Laporan extends BaseController
     ];
 
     private LaporanModel $laporanModel;
+    private BaseConnection $db;
 
     public function __construct()
     {
         $this->laporanModel = new LaporanModel();
+        $this->db = db_connect();
     }
 
     public function index(): string
@@ -126,29 +130,14 @@ class C_Laporan extends BaseController
 
     public function harian(): string
     {
-        $filters = [
-            'unit' => (string) ($this->request->getGet('unit') ?? '*'),
-            'tahun_meter_lama' => (string) ($this->request->getGet('tahun_meter_lama') ?? '*'),
-            'tarif' => (string) ($this->request->getGet('tarif') ?? '*'),
-            'fasa' => (string) ($this->request->getGet('fasa') ?? '*'),
-            'tgl_peremajaan' => (string) ($this->request->getGet('tgl_peremajaan') ?? ''),
-            'search' => trim((string) ($this->request->getGet('search') ?? '')),
-            'alasan' => $this->request->getGet('alasan'),
-        ];
+        $filters = $this->collectHarianFilters('get');
 
-        if (! is_array($filters['alasan'])) {
-            $filters['alasan'] = [];
+        if ($this->request->getGet('alasan') === null) {
+            $filters['alasan'] = array_values(array_filter(array_map(
+                static fn(array $row): string => trim((string) ($row['alasan_ganti_meter'] ?? '')),
+                $this->laporanModel->getAlasanOptions()
+            ), static fn(string $value): bool => $value !== ''));
         }
-
-        $builder = $this->laporanModel->getHarianBuilder($filters);
-
-        $perPage = 50;
-        $page = max(1, (int) ($this->request->getGet('page') ?? 1));
-        $total = $builder->countAllResults(false);
-        $rows = $builder->limit($perPage, ($page - 1) * $perPage)->get()->getResultArray();
-
-        $pager = service('pager');
-        $pager->makeLinks($page, $perPage, $total, 'default_full');
 
         return view('laporan/harian', [
             'title' => 'Laporan Harian',
@@ -157,11 +146,115 @@ class C_Laporan extends BaseController
             'alasanOptions' => $this->laporanModel->getAlasanOptions(),
             'dayaOptions' => $this->laporanModel->getDayaOptions(),
             'filters' => $filters,
-            'rows' => $rows,
-            'page' => $page,
-            'perPage' => $perPage,
-            'total' => $total,
-            'pager' => $pager,
+        ]);
+    }
+
+    public function harianData(): ResponseInterface
+    {
+        $draw = (int) ($this->request->getPost('draw') ?? 0);
+        $start = max(0, (int) ($this->request->getPost('start') ?? 0));
+        $length = (int) ($this->request->getPost('length') ?? 10);
+        if ($length < 1) {
+            $length = 10;
+        }
+
+        $filters = $this->collectHarianFilters('post');
+
+        $orderIndex = (int) ($this->request->getPost('order')[0]['column'] ?? 0);
+        $orderDir = strtolower((string) ($this->request->getPost('order')[0]['dir'] ?? 'desc'));
+        if (! in_array($orderDir, ['asc', 'desc'], true)) {
+            $orderDir = 'desc';
+        }
+
+        $columnMap = [
+            0 => 'no_agenda',
+            1 => 'unit_upi',
+            2 => 'unit_ap',
+            3 => 'unit_up',
+            4 => 'nomor_pdl',
+            5 => 'idpel',
+            6 => 'nama',
+            7 => 'alamat',
+            8 => 'kddk',
+            9 => 'nama_prov',
+            10 => 'nama_kab',
+            11 => 'nama_kec',
+            12 => 'nama_kel',
+            13 => 'tarif',
+            14 => 'daya',
+            15 => 'kdpt',
+            16 => 'kdpt_2',
+            17 => 'jenis_mk',
+            18 => 'rp_token',
+            19 => 'rptotal',
+            20 => 'tgl_pengaduan',
+            21 => 'tgl_tindakan_pengaduan',
+            22 => 'tgl_bayar',
+            23 => 'tgl_aktivasi',
+            24 => 'tgl_penangguhan',
+            25 => 'tgl_restitusi',
+            26 => 'tgl_remaja',
+            27 => 'tgl_nyala',
+            28 => 'tgl_batal',
+            29 => 'status_permohonan',
+            30 => 'id_ganti_meter',
+            31 => 'alasan_ganti_meter',
+            32 => 'alasan_penangguhan',
+            33 => 'keterangan_alasan_penangguhan',
+            34 => 'no_meter_baru',
+            35 => 'merk_meter_baru',
+            36 => 'type_meter_baru',
+            37 => 'thtera_meter_baru',
+            38 => 'thbuat_meter_baru',
+            39 => 'no_meter_lama',
+            40 => 'merk_meter_lama',
+            41 => 'type_meter_lama',
+            42 => 'thtera_meter_lama',
+            43 => 'thbuat_meter_lama',
+            44 => 'petugas_pengaduan',
+            45 => 'petugas_tindakan_pengaduan',
+            46 => 'petugas_aktivasi',
+            47 => 'petugas_penangguhan',
+            48 => 'petugas_restitusi',
+            49 => 'petugas_remaja',
+            50 => 'petugas_batal',
+            51 => 'tgl_rekap',
+            52 => 'kd_pemb_meter',
+            53 => 'ct_primer_kwh',
+            54 => 'ct_sekunder_kwh',
+            55 => 'pt_primer_kwh',
+            56 => 'pt_sekunder_kwh',
+            57 => 'konstanta_kwh',
+            58 => 'fakm_kwh',
+            59 => 'type_ct_kwh',
+            60 => 'ct_primer_kvarh',
+            61 => 'ct_sekunder_kvarh',
+            62 => 'pt_primer_kvarh',
+            63 => 'pt_sekunder_kvarh',
+            64 => 'konstanta_kvarh',
+            65 => 'fakm_kvarh',
+        ];
+
+        $orderBy = $columnMap[$orderIndex] ?? 'id';
+
+        $total = $this->db->table('laporan_harian')->countAllResults();
+
+        $filteredBuilder = $this->laporanModel->getHarianBuilder($filters);
+        $filtered = $filteredBuilder->countAllResults(false);
+
+        $rows = $filteredBuilder
+            ->orderBy($orderBy, $orderDir)
+            ->limit($length, $start)
+            ->get()
+            ->getResultArray();
+
+        $this->response->setHeader('X-CSRF-TOKEN', csrf_hash());
+
+        return $this->response->setJSON([
+            'draw' => $draw,
+            'recordsTotal' => $total,
+            'recordsFiltered' => $filtered,
+            'data' => $rows,
         ]);
     }
 
@@ -182,6 +275,16 @@ class C_Laporan extends BaseController
             return redirect()->to('/C_Laporan/Harian')->with('error', 'Gagal membaca file upload.');
         }
 
+        $firstLine = fgets($handle);
+        if ($firstLine === false) {
+            fclose($handle);
+
+            return redirect()->to('/C_Laporan/Harian')->with('error', 'File CSV kosong atau tidak dapat dibaca.');
+        }
+
+        $delimiter = substr_count($firstLine, ';') >= substr_count($firstLine, ',') ? ';' : ',';
+        rewind($handle);
+
         $inserted = 0;
         $updated = 0;
         $rowNumber = 0;
@@ -200,7 +303,16 @@ class C_Laporan extends BaseController
         ];
 
         try {
-            while (($row = fgetcsv($handle, 0, ';')) !== false) {
+            while (($row = fgetcsv($handle, 0, $delimiter)) !== false) {
+                if (! is_array($row) || $row === []) {
+                    continue;
+                }
+
+                if (isset($row[0])) {
+                    // Remove UTF-8 BOM if present to avoid false header/data detection.
+                    $row[0] = preg_replace('/^\xEF\xBB\xBF/', '', (string) $row[0]) ?? (string) $row[0];
+                }
+
                 $rowNumber++;
 
                 if ($rowNumber === 1) {
@@ -248,24 +360,102 @@ class C_Laporan extends BaseController
 
     public function target(): string
     {
-        $filters = [
-            'unit_id' => (string) ($this->request->getGet('unit_id') ?? '*'),
-            'tahun' => (string) ($this->request->getGet('tahun') ?? '*'),
-        ];
-
-        $rows = $this->laporanModel->getTargetRows($filters);
+        $filters = $this->collectTargetFilters('get');
 
         return view('laporan/target', [
             'title' => 'Target Laporan',
             'pageHeading' => 'Target Laporan',
             'filters' => $filters,
             'units' => $this->laporanModel->getUnits(),
-            'rows' => $rows,
             'currentYear' => (int) date('Y'),
         ]);
     }
 
-    public function saveTarget(): RedirectResponse
+    public function targetData(): ResponseInterface
+    {
+        $draw = (int) ($this->request->getPost('draw') ?? 0);
+        $start = max(0, (int) ($this->request->getPost('start') ?? 0));
+        $length = (int) ($this->request->getPost('length') ?? 10);
+        if ($length < 1) {
+            $length = 10;
+        }
+
+        $filters = $this->collectTargetFilters('post');
+
+        $orderIndex = (int) ($this->request->getPost('order')[0]['column'] ?? 2);
+        $orderDir = strtolower((string) ($this->request->getPost('order')[0]['dir'] ?? 'desc'));
+        if (! in_array($orderDir, ['asc', 'desc'], true)) {
+            $orderDir = 'desc';
+        }
+
+        $total = $this->db->table('trn_target_laporan')->countAllResults();
+
+        $filteredCountBuilder = $this->buildTargetBaseBuilder($filters);
+        $recordsFiltered = $filteredCountBuilder->countAllResults();
+
+        $summaryBuilder = $this->buildTargetBaseBuilder($filters);
+        $summary = $summaryBuilder
+            ->select('COUNT(*) AS total_rows, COALESCE(SUM(t.target_tua), 0) AS total_tua, COALESCE(SUM(t.target_rusak), 0) AS total_rusak', false)
+            ->get()
+            ->getRowArray();
+
+        $rowsBuilder = $this->buildTargetBaseBuilder($filters)
+            ->select('t.id, t.unit_id, t.tahun, t.target_tua, t.target_rusak, u.unit_name');
+
+        if ($orderIndex === 1) {
+            $rowsBuilder->orderBy('u.unit_name', $orderDir);
+        } elseif ($orderIndex === 2) {
+            $rowsBuilder->orderBy('t.tahun', $orderDir);
+        } elseif ($orderIndex === 3) {
+            $rowsBuilder->orderBy('t.target_tua', $orderDir);
+        } elseif ($orderIndex === 4) {
+            $rowsBuilder->orderBy('t.target_rusak', $orderDir);
+        } elseif ($orderIndex === 5) {
+            $rowsBuilder->orderBy('(t.target_tua + t.target_rusak)', $orderDir, false);
+        } else {
+            $rowsBuilder->orderBy('t.tahun', 'DESC')->orderBy('u.urutan', 'ASC');
+        }
+
+        $rows = $rowsBuilder->limit($length, $start)->get()->getResultArray();
+
+        $data = [];
+        foreach ($rows as $index => $row) {
+            $targetTua = (int) ($row['target_tua'] ?? 0);
+            $targetRusak = (int) ($row['target_rusak'] ?? 0);
+            $data[] = [
+                'no' => $start + $index + 1,
+                'unit_name' => (string) ($row['unit_name'] ?? '-'),
+                'tahun' => (string) ($row['tahun'] ?? '-'),
+                'target_tua' => number_format($targetTua, 0, ',', '.'),
+                'target_rusak' => number_format($targetRusak, 0, ',', '.'),
+                'total' => number_format($targetTua + $targetRusak, 0, ',', '.'),
+                'aksi' => '<button type="button" class="btn btn-sm btn-label-primary btn-edit-target"'
+                    . ' data-id="' . esc((string) ($row['id'] ?? '')) . '"'
+                    . ' data-unit="' . esc((string) ($row['unit_id'] ?? '')) . '"'
+                    . ' data-tahun="' . esc((string) ($row['tahun'] ?? '')) . '"'
+                    . ' data-target-tua="' . esc((string) ($row['target_tua'] ?? '0')) . '"'
+                    . ' data-target-rusak="' . esc((string) ($row['target_rusak'] ?? '0')) . '">Edit</button>'
+                    . ' <button type="button" class="btn btn-sm btn-label-danger btn-delete-target" data-id="'
+                    . esc((string) ($row['id'] ?? '')) . '">Hapus</button>',
+            ];
+        }
+
+        $this->response->setHeader('X-CSRF-TOKEN', csrf_hash());
+
+        return $this->response->setJSON([
+            'draw' => $draw,
+            'recordsTotal' => $total,
+            'recordsFiltered' => $recordsFiltered,
+            'data' => $data,
+            'meta' => [
+                'total_rows' => (int) ($summary['total_rows'] ?? 0),
+                'total_tua' => (int) ($summary['total_tua'] ?? 0),
+                'total_rusak' => (int) ($summary['total_rusak'] ?? 0),
+            ],
+        ]);
+    }
+
+    public function saveTarget(): ResponseInterface|RedirectResponse
     {
         $rules = [
             'id' => 'permit_empty|integer',
@@ -276,6 +466,16 @@ class C_Laporan extends BaseController
         ];
 
         if (! $this->validate($rules)) {
+            if ($this->request->isAJAX()) {
+                $this->response->setHeader('X-CSRF-TOKEN', csrf_hash());
+
+                return $this->response->setJSON([
+                    'status' => false,
+                    'message' => 'Data target tidak valid.',
+                    'errors' => $this->validator->getErrors(),
+                ])->setStatusCode(422);
+            }
+
             return redirect()->to('/C_Laporan/Target')->withInput()->with('errors', $this->validator->getErrors());
         }
 
@@ -306,16 +506,43 @@ class C_Laporan extends BaseController
         } catch (Throwable $e) {
             log_message('error', 'LAPORAN_TARGET_SAVE_FAILED: {message}', ['message' => $e->getMessage()]);
 
+            if ($this->request->isAJAX()) {
+                $this->response->setHeader('X-CSRF-TOKEN', csrf_hash());
+
+                return $this->response->setJSON([
+                    'status' => false,
+                    'message' => 'Gagal menyimpan target.',
+                ])->setStatusCode(500);
+            }
+
             return redirect()->to('/C_Laporan/Target')->withInput()->with('error', 'Gagal menyimpan target.');
+        }
+
+        if ($this->request->isAJAX()) {
+            $this->response->setHeader('X-CSRF-TOKEN', csrf_hash());
+
+            return $this->response->setJSON([
+                'status' => true,
+                'message' => 'Target berhasil disimpan.',
+            ]);
         }
 
         return redirect()->to('/C_Laporan/Target')->with('success', 'Target berhasil disimpan.');
     }
 
-    public function deleteTarget(): RedirectResponse
+    public function deleteTarget(): ResponseInterface|RedirectResponse
     {
         $rules = ['id' => 'required|integer'];
         if (! $this->validate($rules)) {
+            if ($this->request->isAJAX()) {
+                $this->response->setHeader('X-CSRF-TOKEN', csrf_hash());
+
+                return $this->response->setJSON([
+                    'status' => false,
+                    'message' => 'Permintaan hapus target tidak valid.',
+                ])->setStatusCode(422);
+            }
+
             return redirect()->to('/C_Laporan/Target')->with('error', 'Permintaan hapus target tidak valid.');
         }
 
@@ -324,7 +551,25 @@ class C_Laporan extends BaseController
         } catch (Throwable $e) {
             log_message('error', 'LAPORAN_TARGET_DELETE_FAILED: {message}', ['message' => $e->getMessage()]);
 
+            if ($this->request->isAJAX()) {
+                $this->response->setHeader('X-CSRF-TOKEN', csrf_hash());
+
+                return $this->response->setJSON([
+                    'status' => false,
+                    'message' => 'Gagal menghapus target.',
+                ])->setStatusCode(500);
+            }
+
             return redirect()->to('/C_Laporan/Target')->with('error', 'Gagal menghapus target.');
+        }
+
+        if ($this->request->isAJAX()) {
+            $this->response->setHeader('X-CSRF-TOKEN', csrf_hash());
+
+            return $this->response->setJSON([
+                'status' => true,
+                'message' => 'Target berhasil dihapus.',
+            ]);
         }
 
         return redirect()->to('/C_Laporan/Target')->with('success', 'Target berhasil dihapus.');
@@ -332,53 +577,35 @@ class C_Laporan extends BaseController
 
     public function realisasi(): string
     {
-        $type = (string) ($this->request->getGet('type') ?? 'tahunan');
-        if (! in_array($type, ['tahunan', 'bulanan', 'harian'], true)) {
-            $type = 'tahunan';
-        }
-
-        $params = [
-            'tahun' => (int) ($this->request->getGet('tahun') ?? date('Y')),
-            'bulan' => (int) ($this->request->getGet('bulan') ?? date('n')),
-            'tgl' => (string) ($this->request->getGet('tgl') ?? date('Y-m-d')),
-        ];
-
-        $rows = $this->laporanModel->getRealisasiRows($type, $params);
-
-        $sort = (string) ($this->request->getGet('sort') ?? 'none');
-        if ($sort === 'highest') {
-            usort($rows, static fn($a, $b) => ($b['percent'] <=> $a['percent']));
-        } elseif ($sort === 'lowest') {
-            usort($rows, static fn($a, $b) => ($a['percent'] <=> $b['percent']));
-        }
+        $filters = $this->collectRealisasiFilters('get');
+        $rows = $this->buildRealisasiRows($filters['type'], $filters['params'], $filters['sort']);
 
         return view('laporan/realisasi', [
             'title' => 'Realisasi Laporan',
             'pageHeading' => 'Realisasi Laporan',
-            'type' => $type,
-            'params' => $params,
-            'sort' => $sort,
+            'type' => $filters['type'],
+            'params' => $filters['params'],
+            'sort' => $filters['sort'],
+            'rows' => $rows,
+        ]);
+    }
+
+    public function realisasiData(): string
+    {
+        $filters = $this->collectRealisasiFilters('post');
+        $rows = $this->buildRealisasiRows($filters['type'], $filters['params'], $filters['sort']);
+
+        $this->response->setHeader('X-CSRF-TOKEN', csrf_hash());
+
+        return view('laporan/realisasi_content', [
+            'params' => $filters['params'],
             'rows' => $rows,
         ]);
     }
 
     public function saldo(): string
     {
-        $filters = [
-            'unit' => (string) ($this->request->getGet('unit') ?? '*'),
-            'bulan' => (string) ($this->request->getGet('bulan') ?? '*'),
-            'idpel' => trim((string) ($this->request->getGet('idpel') ?? '')),
-            'search' => trim((string) ($this->request->getGet('search') ?? '')),
-        ];
-
-        $builder = $this->laporanModel->getSaldoBuilder($filters);
-        $perPage = 50;
-        $page = max(1, (int) ($this->request->getGet('page') ?? 1));
-        $total = $builder->countAllResults(false);
-        $rows = $builder->limit($perPage, ($page - 1) * $perPage)->get()->getResultArray();
-
-        $pager = service('pager');
-        $pager->makeLinks($page, $perPage, $total, 'default_full');
+        $filters = $this->collectSaldoFilters('get');
 
         return view('laporan/saldo', [
             'title' => 'Saldo Pelanggan',
@@ -386,11 +613,102 @@ class C_Laporan extends BaseController
             'units' => $this->laporanModel->getUnits(),
             'bulanOptions' => $this->laporanModel->getSaldoBulanOptions(),
             'filters' => $filters,
-            'rows' => $rows,
-            'page' => $page,
-            'perPage' => $perPage,
-            'total' => $total,
-            'pager' => $pager,
+        ]);
+    }
+
+    public function saldoData(): ResponseInterface
+    {
+        $draw = (int) ($this->request->getPost('draw') ?? 0);
+        $start = max(0, (int) ($this->request->getPost('start') ?? 0));
+        $length = (int) ($this->request->getPost('length') ?? 10);
+        if ($length < 1) {
+            $length = 10;
+        }
+
+        $filters = $this->collectSaldoFilters('post');
+
+        $orderIndex = (int) ($this->request->getPost('order')[0]['column'] ?? 0);
+        $orderDir = strtolower((string) ($this->request->getPost('order')[0]['dir'] ?? 'desc'));
+        if (! in_array($orderDir, ['asc', 'desc'], true)) {
+            $orderDir = 'desc';
+        }
+
+        $columnMap = [
+            0 => 'v_bulan_rekap',
+            1 => 'unit_up',
+            2 => 'idpel',
+            3 => 'nama',
+            4 => 'nama_pnj',
+            5 => 'tarif',
+            6 => 'daya',
+            7 => 'kdpt_2',
+            8 => 'thbl_mut',
+            9 => 'jenis_mk',
+            10 => 'jenis_layanan',
+            11 => 'frt',
+            12 => 'kogol',
+            13 => 'fkmkwh',
+            14 => 'nomor_meter_kwh',
+            15 => 'tanggal_pasang_rubah_app',
+            16 => 'merk_meter_kwh',
+            17 => 'type_meter_kwh',
+            18 => 'tahun_tera_meter_kwh',
+            19 => 'tahun_buat_meter_kwh',
+            20 => 'nomor_gardu',
+            21 => 'nomor_jurusan_tiang',
+            22 => 'nama_gardu',
+            23 => 'kapasitas_trafo',
+            24 => 'nomor_meter_prepaid',
+            25 => 'product',
+            26 => 'koordinat_x',
+            27 => 'koordinat_y',
+            28 => 'kdam',
+            29 => 'kd_pemb_meter',
+            30 => 'ket_kdpembmeter',
+            31 => 'status_dil',
+            32 => 'krn',
+            33 => 'vkrn',
+        ];
+
+        $orderBy = $columnMap[$orderIndex] ?? 'idpel';
+
+        $total = $this->db->table('trn_saldo_pelanggan')->countAllResults();
+
+        $filteredBuilder = $this->laporanModel->getSaldoBuilder($filters);
+        $filtered = $filteredBuilder->countAllResults(false);
+
+        $rows = $filteredBuilder
+            ->orderBy($orderBy, $orderDir)
+            ->limit($length, $start)
+            ->get()
+            ->getResultArray();
+
+        foreach ($rows as &$row) {
+            $idpel = (string) ($row['idpel'] ?? '');
+            $bulan = (string) ($row['v_bulan_rekap'] ?? '');
+            $nama = (string) ($row['nama'] ?? '');
+            $tarif = (string) ($row['tarif'] ?? '');
+            $daya = (string) ($row['daya'] ?? '');
+            $meter = (string) ($row['nomor_meter_kwh'] ?? '');
+
+            $row['aksi'] = '<button type="button" class="btn btn-sm btn-label-primary btn-edit-saldo"'
+                . ' data-idpel="' . esc($idpel) . '"'
+                . ' data-bulan="' . esc($bulan) . '"'
+                . ' data-nama="' . esc($nama) . '"'
+                . ' data-tarif="' . esc($tarif) . '"'
+                . ' data-daya="' . esc($daya) . '"'
+                . ' data-meter="' . esc($meter) . '"'
+                . ' data-bs-toggle="modal" data-bs-target="#saldoModal">Update</button>';
+        }
+        unset($row);
+
+        $this->response->setHeader('X-CSRF-TOKEN', csrf_hash());
+
+        return $this->response->setJSON([
+            'draw' => $draw,
+            'recordsTotal' => $total,
+            'recordsFiltered' => $filtered,
+            'data' => $rows,
         ]);
     }
 
@@ -457,6 +775,122 @@ class C_Laporan extends BaseController
             'sortir' => (string) (($isPost ? $this->request->getPost('sortir') : $this->request->getGet('sortir')) ?? '*'),
             'alasan' => is_array($alasan) ? $alasan : [],
         ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function collectHarianFilters(string $method = 'get'): array
+    {
+        $isPost = strtolower($method) === 'post';
+        $alasan = $isPost ? $this->request->getPost('alasan') : $this->request->getGet('alasan');
+
+        return [
+            'unit' => (string) (($isPost ? $this->request->getPost('unit') : $this->request->getGet('unit')) ?? '*'),
+            'tahun_meter_lama' => (string) (($isPost ? $this->request->getPost('tahun_meter_lama') : $this->request->getGet('tahun_meter_lama')) ?? '*'),
+            'tarif' => (string) (($isPost ? $this->request->getPost('tarif') : $this->request->getGet('tarif')) ?? '*'),
+            'fasa' => (string) (($isPost ? $this->request->getPost('fasa') : $this->request->getGet('fasa')) ?? '*'),
+            'tgl_peremajaan' => (string) (($isPost ? $this->request->getPost('tgl_peremajaan') : $this->request->getGet('tgl_peremajaan')) ?? ''),
+            'search' => '',
+            'alasan' => is_array($alasan) ? $alasan : [],
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function collectSaldoFilters(string $method = 'get'): array
+    {
+        $isPost = strtolower($method) === 'post';
+
+        return [
+            'unit' => (string) (($isPost ? $this->request->getPost('unit') : $this->request->getGet('unit')) ?? '*'),
+            'bulan' => (string) (($isPost ? $this->request->getPost('bulan') : $this->request->getGet('bulan')) ?? '*'),
+            'idpel' => trim((string) (($isPost ? $this->request->getPost('idpel') : $this->request->getGet('idpel')) ?? '')),
+            'search' => '',
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function collectTargetFilters(string $method = 'get'): array
+    {
+        $isPost = strtolower($method) === 'post';
+
+        return [
+            'unit_id' => (string) (($isPost ? $this->request->getPost('unit_id') : $this->request->getGet('unit_id')) ?? '*'),
+            'tahun' => (string) (($isPost ? $this->request->getPost('tahun') : $this->request->getGet('tahun')) ?? '*'),
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function collectRealisasiFilters(string $method = 'get'): array
+    {
+        $isPost = strtolower($method) === 'post';
+
+        $type = (string) (($isPost ? $this->request->getPost('type') : $this->request->getGet('type')) ?? 'tahunan');
+        if (! in_array($type, ['tahunan', 'bulanan', 'harian'], true)) {
+            $type = 'tahunan';
+        }
+
+        $sort = (string) (($isPost ? $this->request->getPost('sort') : $this->request->getGet('sort')) ?? 'none');
+        if (! in_array($sort, ['none', 'highest', 'lowest'], true)) {
+            $sort = 'none';
+        }
+
+        return [
+            'type' => $type,
+            'sort' => $sort,
+            'params' => [
+                'tahun' => (int) (($isPost ? $this->request->getPost('tahun') : $this->request->getGet('tahun')) ?? date('Y')),
+                'bulan' => (int) (($isPost ? $this->request->getPost('bulan') : $this->request->getGet('bulan')) ?? date('n')),
+                'tgl' => (string) (($isPost ? $this->request->getPost('tgl') : $this->request->getGet('tgl')) ?? date('Y-m-d')),
+            ],
+        ];
+    }
+
+    /**
+     * @param array<string, mixed> $params
+     * @return array<int, array<string, mixed>>
+     */
+    private function buildRealisasiRows(string $type, array $params, string $sort): array
+    {
+        $rows = $this->laporanModel->getRealisasiRows($type, $params);
+
+        $rows = array_values(array_filter($rows, static function (array $row): bool {
+            $unitName = strtoupper(trim((string) ($row['unit_name'] ?? '')));
+            return $unitName !== 'UID JAYA';
+        }));
+
+        if ($sort === 'highest') {
+            usort($rows, static fn($a, $b) => (($b['percent'] ?? 0) <=> ($a['percent'] ?? 0)));
+        } elseif ($sort === 'lowest') {
+            usort($rows, static fn($a, $b) => (($a['percent'] ?? 0) <=> ($b['percent'] ?? 0)));
+        }
+
+        return $rows;
+    }
+
+    /**
+     * @param array<string, mixed> $filters
+     */
+    private function buildTargetBaseBuilder(array $filters)
+    {
+        $builder = $this->db->table('trn_target_laporan t')
+            ->join('mst_unit u', 'u.unit_id = t.unit_id', 'left');
+
+        if (($filters['tahun'] ?? '*') !== '*') {
+            $builder->where('t.tahun', (int) $filters['tahun']);
+        }
+
+        if (($filters['unit_id'] ?? '*') !== '*') {
+            $builder->where('t.unit_id', (int) $filters['unit_id']);
+        }
+
+        return $builder;
     }
 
     /**

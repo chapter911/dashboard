@@ -110,6 +110,53 @@
             border-color: #fff !important;
         }
 
+        .table > :not(caption) > tbody > tr > th,
+        .table > :not(caption) > tbody > tr > td,
+        .table tbody th,
+        .table tbody td {
+            border-color: rgba(var(--app-primary-rgb), 0.28) !important;
+        }
+
+        .table > :not(caption) > tbody > tr > * {
+            border-bottom: 1px solid rgba(var(--app-primary-rgb), 0.28) !important;
+        }
+
+        .table.table-bordered > :not(caption) > tbody > tr > th,
+        .table.table-bordered > :not(caption) > tbody > tr > td,
+        .table-bordered > tbody > tr > th,
+        .table-bordered > tbody > tr > td {
+            border: 1px solid rgba(var(--app-primary-rgb), 0.28) !important;
+        }
+
+        .table > tbody > tr:nth-of-type(odd) > *,
+        .table-striped > tbody > tr:nth-of-type(odd) > * {
+            background-color: rgba(var(--app-primary-rgb), 0.09) !important;
+        }
+
+        .table > tbody > tr:nth-of-type(even) > * {
+            background-color: rgba(var(--app-primary-rgb), 0.02) !important;
+        }
+
+        /* Global DataTables pagination theme follows app primary color. */
+        .dataTables_wrapper .dataTables_paginate .pagination .page-item.active .page-link,
+        .dataTables_wrapper .dataTables_paginate .pagination .page-item.active > .page-link {
+            background-color: var(--app-primary) !important;
+            border-color: var(--app-primary) !important;
+            color: #fff !important;
+            box-shadow: 0 0.2rem 0.5rem rgba(var(--app-primary-rgb), 0.35);
+        }
+
+        .dataTables_wrapper .dataTables_paginate .pagination .page-item .page-link {
+            color: var(--app-primary) !important;
+        }
+
+        .dataTables_wrapper .dataTables_paginate .pagination .page-item:not(.active) .page-link:hover,
+        .dataTables_wrapper .dataTables_paginate .pagination .page-item:not(.active) .page-link:focus {
+            background-color: rgba(var(--app-primary-rgb), 0.1) !important;
+            border-color: rgba(var(--app-primary-rgb), 0.35) !important;
+            color: var(--app-primary-deep) !important;
+        }
+
         /* Keep table blocks inside cards from touching card edges. */
         .card > .table-responsive {
             padding: 0 1rem 1rem;
