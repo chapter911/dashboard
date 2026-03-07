@@ -98,7 +98,16 @@
         .table thead th {
             background-color: var(--app-primary) !important;
             color: #fff !important;
-            border-color: rgba(var(--app-primary-rgb), 0.55) !important;
+            border-color: #fff !important;
+        }
+
+        .table > :not(caption) > tfoot > tr > th,
+        .table > :not(caption) > tfoot > tr > td,
+        .table tfoot th,
+        .table tfoot td {
+            background-color: var(--app-primary) !important;
+            color: #fff !important;
+            border-color: #fff !important;
         }
 
         /* Keep table blocks inside cards from touching card edges. */

@@ -47,6 +47,7 @@ $routes->post('C_Master/KategoriTegangan/delete', 'C_Master::deleteKategoriTegan
 
 $routes->get('C_Laporan', 'C_Laporan::index', ['filter' => 'auth']);
 $routes->get('C_Laporan/Index', 'C_Laporan::index', ['filter' => 'auth']);
+$routes->post('C_Laporan/getDataIndex', 'C_Laporan::getDataIndex', ['filter' => 'auth']);
 $routes->get('C_Laporan/Harian', 'C_Laporan::harian', ['filter' => 'auth']);
 $routes->post('C_Laporan/Harian/import', 'C_Laporan::importHarian', ['filter' => 'auth']);
 $routes->get('C_Laporan/Target', 'C_Laporan::target', ['filter' => 'auth']);

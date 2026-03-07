@@ -87,16 +87,38 @@ class C_Laporan extends BaseController
 
     public function index(): string
     {
-        $filters = $this->collectDashboardFilters();
-        $dashboard = $this->laporanModel->getDashboardSummary($filters);
+        $filters = $this->collectDashboardFilters('get');
+        $alasanOptions = $this->laporanModel->getAlasanOptions();
+
+        // Legacy behavior: on initial load all alasan options are selected.
+        // This means dashboard totals only include rows with non-empty alasan.
+        if ($this->request->getGet('alasan') === null) {
+            $filters['alasan'] = array_values(array_filter(array_map(
+                static fn(array $row): string => trim((string) ($row['alasan_ganti_meter'] ?? '')),
+                $alasanOptions
+            ), static fn(string $value): bool => $value !== ''));
+        }
 
         return view('laporan/index', [
             'title' => 'Laporan Dashboard',
             'pageHeading' => 'Laporan Dashboard',
             'units' => $this->laporanModel->getUnits(),
-            'alasanOptions' => $this->laporanModel->getAlasanOptions(),
+            'alasanOptions' => $alasanOptions,
             'dayaOptions' => $this->laporanModel->getDayaOptions(),
             'filters' => $filters,
+        ]);
+    }
+
+    public function getDataIndex(): string
+    {
+        $filters = $this->collectDashboardFilters('post');
+        $dashboard = $this->laporanModel->getDashboardSummary($filters);
+
+        // CSRF token is regenerated on each successful POST; send the fresh hash
+        // so the frontend can update subsequent AJAX requests.
+        $this->response->setHeader('X-CSRF-TOKEN', csrf_hash());
+
+        return view('laporan/index_table', [
             'summaryRows' => $dashboard['summaryRows'],
             'reasonRows' => $dashboard['reasonRows'],
         ]);
@@ -419,18 +441,20 @@ class C_Laporan extends BaseController
     /**
      * @return array<string, mixed>
      */
-    private function collectDashboardFilters(): array
+    private function collectDashboardFilters(string $method = 'get'): array
     {
-        $alasan = $this->request->getGet('alasan');
+        $isPost = strtolower($method) === 'post';
+
+        $alasan = $isPost ? $this->request->getPost('alasan') : $this->request->getGet('alasan');
 
         return [
-            'unit' => (string) ($this->request->getGet('unit') ?? '*'),
-            'tahun_meter_lama' => (string) ($this->request->getGet('tahun_meter_lama') ?? '*'),
-            'tarif' => (string) ($this->request->getGet('tarif') ?? '*'),
-            'fasa' => (string) ($this->request->getGet('fasa') ?? '*'),
-            'tgl_awal' => (string) ($this->request->getGet('tgl_awal') ?? date('Y-m-01')),
-            'tgl_akhir' => (string) ($this->request->getGet('tgl_akhir') ?? date('Y-m-d')),
-            'sortir' => (string) ($this->request->getGet('sortir') ?? '*'),
+            'unit' => (string) (($isPost ? $this->request->getPost('unit') : $this->request->getGet('unit')) ?? '*'),
+            'tahun_meter_lama' => (string) (($isPost ? $this->request->getPost('tahun_meter_lama') : $this->request->getGet('tahun_meter_lama')) ?? '*'),
+            'tarif' => (string) (($isPost ? $this->request->getPost('tarif') : $this->request->getGet('tarif')) ?? '*'),
+            'fasa' => (string) (($isPost ? $this->request->getPost('fasa') : $this->request->getGet('fasa')) ?? '*'),
+            'tgl_awal' => (string) (($isPost ? $this->request->getPost('tgl_awal') : $this->request->getGet('tgl_awal')) ?? date('Y-m-01')),
+            'tgl_akhir' => (string) (($isPost ? $this->request->getPost('tgl_akhir') : $this->request->getGet('tgl_akhir')) ?? date('Y-m-d')),
+            'sortir' => (string) (($isPost ? $this->request->getPost('sortir') : $this->request->getGet('sortir')) ?? '*'),
             'alasan' => is_array($alasan) ? $alasan : [],
         ];
     }

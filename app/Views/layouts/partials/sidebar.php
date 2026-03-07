@@ -5,14 +5,29 @@ $logoUrl = $logoUrl ?? ($branding['app_logo_url'] ?? base_url('assets/img/brandi
 $uriPath = trim(uri_string(), '/');
 $sidebarMenus = $sidebarMenus ?? [];
 
-$isLinkActive = static function (string $link) use ($uriPath): bool {
-    $clean = trim($link, '/');
+$normalizePath = static function (string $path): string {
+    $clean = trim(str_replace('index.php/', '', $path), '/');
+    if ($clean === '') {
+        return '';
+    }
+
+    // Treat `/foo` and `/foo/Index` as the same menu target.
+    if (preg_match('#/index$#i', $clean) === 1) {
+        $clean = preg_replace('#/index$#i', '', $clean) ?? $clean;
+    }
+
+    return strtolower($clean);
+};
+
+$isLinkActive = static function (string $link) use ($uriPath, $normalizePath): bool {
+    $clean = $normalizePath($link);
+    $current = $normalizePath($uriPath);
 
     if ($clean === '' || $clean === '#') {
         return false;
     }
 
-    return $uriPath === $clean || strpos($uriPath, $clean . '/') === 0;
+    return $current === $clean;
 };
 
 $hasActiveChild = static function (array $children, callable $isLinkActive, callable $hasActiveChild): bool {

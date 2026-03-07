@@ -124,6 +124,20 @@ class LaporanModel extends Model
     public function getHarianBuilder(array $filters): BaseBuilder
     {
         $builder = $this->db->table('laporan_harian');
+        $this->applyHarianFilters($builder, $filters);
+
+        return $builder->orderBy('id', 'DESC');
+    }
+
+    private function applyHarianFilters(BaseBuilder $builder, array $filters): void
+    {
+        if (! empty($filters['tgl_awal'])) {
+            $builder->where('tgl_remaja >=', $filters['tgl_awal']);
+        }
+
+        if (! empty($filters['tgl_akhir'])) {
+            $builder->where('tgl_remaja <=', $filters['tgl_akhir']);
+        }
 
         if (($filters['unit'] ?? '*') !== '*') {
             $builder->where('unit_ap', (int) $filters['unit']);
@@ -173,8 +187,6 @@ class LaporanModel extends Model
                 ->orLike('no_agenda', $search)
                 ->groupEnd();
         }
-
-        return $builder->orderBy('id', 'DESC');
     }
 
     /**
@@ -183,41 +195,45 @@ class LaporanModel extends Model
     public function getDashboardSummary(array $filters): array
     {
         $units = $this->getUnits();
-        $builder = $this->getHarianBuilder($filters);
-        $rows = $builder->get()->getResultArray();
+        $summaryBuilder = $this->db->table('mst_unit');
+        $summaryBuilder->join('laporan_harian', 'mst_unit.unit_id = laporan_harian.unit_ap', 'left');
+        $summaryBuilder->join('mst_daya', 'mst_daya.daya = laporan_harian.daya', 'left');
+        $this->applyDashboardFilters($summaryBuilder, $filters);
+
+        $summaryRowsRaw = $summaryBuilder
+            ->select(
+                "mst_unit.unit_id AS unit_ap,
+                mst_unit.unit_name AS unit_name,
+                SUM(CASE WHEN (YEAR(laporan_harian.tgl_remaja) - laporan_harian.thbuat_meter_lama) BETWEEN 0 AND 5
+                THEN 1 ELSE 0 END) AS usia0,
+                SUM(CASE WHEN (YEAR(laporan_harian.tgl_remaja) - laporan_harian.thbuat_meter_lama) BETWEEN 6 AND 10
+                THEN 1 ELSE 0 END) AS usia6,
+                SUM(CASE WHEN (YEAR(laporan_harian.tgl_remaja) - laporan_harian.thbuat_meter_lama) BETWEEN 11 AND 15
+                THEN 1 ELSE 0 END) AS usia11,
+                SUM(CASE WHEN (YEAR(laporan_harian.tgl_remaja) - laporan_harian.thbuat_meter_lama) BETWEEN 16 AND 2000
+                THEN 1 ELSE 0 END) AS usia16,
+                SUM(CASE WHEN ((YEAR(laporan_harian.tgl_remaja) - laporan_harian.thbuat_meter_lama) IS NULL
+                    OR (YEAR(laporan_harian.tgl_remaja) - laporan_harian.thbuat_meter_lama) > 2000)
+                THEN 1 ELSE 0 END) AS usia_blank,
+                COUNT(laporan_harian.unit_ap) AS total",
+                false
+            )
+            ->groupBy('mst_unit.unit_id, mst_unit.unit_name')
+            ->orderBy('mst_unit.urutan', 'ASC')
+            ->get()
+            ->getResultArray();
 
         $map = [];
-        foreach ($rows as $row) {
+        foreach ($summaryRowsRaw as $row) {
             $unitKey = (int) ($row['unit_ap'] ?? 0);
-            if (! isset($map[$unitKey])) {
-                $map[$unitKey] = [
-                    'usia0' => 0,
-                    'usia6' => 0,
-                    'usia11' => 0,
-                    'usia16' => 0,
-                    'usia_blank' => 0,
-                    'total' => 0,
-                ];
-            }
-
-            $thBuat = (int) ($row['thbuat_meter_lama'] ?? 0);
-            $tglRemaja = (string) ($row['tgl_remaja'] ?? '');
-            $tahunRemaja = $tglRemaja !== '' ? (int) date('Y', strtotime($tglRemaja)) : 0;
-            $usia = ($thBuat > 0 && $tahunRemaja > 0) ? ($tahunRemaja - $thBuat) : null;
-
-            if ($usia === null || $usia > 2000 || $usia < 0) {
-                $map[$unitKey]['usia_blank']++;
-            } elseif ($usia <= 5) {
-                $map[$unitKey]['usia0']++;
-            } elseif ($usia <= 10) {
-                $map[$unitKey]['usia6']++;
-            } elseif ($usia <= 15) {
-                $map[$unitKey]['usia11']++;
-            } else {
-                $map[$unitKey]['usia16']++;
-            }
-
-            $map[$unitKey]['total']++;
+            $map[$unitKey] = [
+                'usia0' => (int) ($row['usia0'] ?? 0),
+                'usia6' => (int) ($row['usia6'] ?? 0),
+                'usia11' => (int) ($row['usia11'] ?? 0),
+                'usia16' => (int) ($row['usia16'] ?? 0),
+                'usia_blank' => (int) ($row['usia_blank'] ?? 0),
+                'total' => (int) ($row['total'] ?? 0),
+            ];
         }
 
         $summaryRows = [];
@@ -244,7 +260,18 @@ class LaporanModel extends Model
             ];
         }
 
-        $reasonRows = $this->db->table('laporan_harian')
+        $sortir = (string) ($filters['sortir'] ?? '*');
+        if ($sortir === '1') {
+            usort($summaryRows, static fn($a, $b) => ((int) ($b['total'] ?? 0)) <=> ((int) ($a['total'] ?? 0)));
+        } elseif ($sortir === '0') {
+            usort($summaryRows, static fn($a, $b) => ((int) ($a['total'] ?? 0)) <=> ((int) ($b['total'] ?? 0)));
+        }
+
+        $reasonBuilder = $this->db->table('laporan_harian');
+        $reasonBuilder->join('mst_daya', 'mst_daya.daya = laporan_harian.daya', 'left');
+        $this->applyDashboardFilters($reasonBuilder, $filters);
+
+        $reasonRows = $reasonBuilder
             ->select('alasan_ganti_meter, COUNT(*) AS total')
             ->where('alasan_ganti_meter IS NOT NULL', null, false)
             ->where('TRIM(alasan_ganti_meter) <>', '')
@@ -257,6 +284,46 @@ class LaporanModel extends Model
             'summaryRows' => $summaryRows,
             'reasonRows' => $reasonRows,
         ];
+    }
+
+    private function applyDashboardFilters(BaseBuilder $builder, array $filters): void
+    {
+        if (($filters['unit'] ?? '*') !== '*') {
+            $builder->where('laporan_harian.unit_ap', (int) $filters['unit']);
+        }
+
+        $alasan = $filters['alasan'] ?? [];
+        if (is_array($alasan) && $alasan !== []) {
+            $builder->whereIn('laporan_harian.alasan_ganti_meter', $alasan);
+        }
+
+        $tahunMeterLama = (string) ($filters['tahun_meter_lama'] ?? '*');
+        if ($tahunMeterLama !== '*') {
+            $builder->where('laporan_harian.thbuat_meter_lama', $tahunMeterLama);
+        }
+
+        $tarifType = (string) ($filters['tarif'] ?? '*');
+        if ($tarifType === 'pra') {
+            $builder->like('laporan_harian.tarif', 'T');
+        } elseif ($tarifType === 'paska') {
+            $builder->notLike('laporan_harian.tarif', 'T');
+        }
+
+        $fasa = (string) ($filters['fasa'] ?? '*');
+        if ($fasa !== '*') {
+            $builder->groupStart()
+                ->where('mst_daya.daya', $fasa)
+                ->orWhere('mst_daya.jenis', $fasa)
+                ->groupEnd();
+        }
+
+        if (! empty($filters['tgl_awal'])) {
+            $builder->where('laporan_harian.tgl_remaja >=', $filters['tgl_awal']);
+        }
+
+        if (! empty($filters['tgl_akhir'])) {
+            $builder->where('laporan_harian.tgl_remaja <=', $filters['tgl_akhir']);
+        }
     }
 
     /**
