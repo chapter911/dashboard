@@ -3,12 +3,20 @@
 namespace App\Controllers;
 
 use App\Models\KategoriTeganganModel;
+use App\Models\PelangganMasterModel;
 use CodeIgniter\HTTP\RedirectResponse;
+use CodeIgniter\HTTP\ResponseInterface;
+use PhpOffice\PhpSpreadsheet\IOFactory;
+use PhpOffice\PhpSpreadsheet\Reader\IReadFilter;
 use Throwable;
 
 class C_Master extends BaseController
 {
     private const ALLOWED_KATEGORI = ['TR', 'TM', 'TT'];
+    private const TABLE_PELANGGAN = 'mst_data_induk_langganan';
+    private const PELANGGAN_IMPORT_STATE_PREFIX = 'pelanggan_import_';
+    private const PELANGGAN_IMPORT_CHUNK_SIZE = 1000;
+    private const PELANGGAN_IMPORT_BATCH_SIZE = 500;
 
     public function kategoriTegangan(): string
     {
@@ -125,5 +133,621 @@ class C_Master extends BaseController
         }
 
         return redirect()->to('/C_Master/KategoriTegangan')->with('success', 'Kategori tegangan berhasil dihapus.');
+    }
+
+    public function pelanggan(): string
+    {
+        $model = new PelangganMasterModel();
+        $filters = [
+            'unit' => (string) ($this->request->getGet('unit') ?? '*'),
+            'bulan' => (string) ($this->request->getGet('bulan') ?? '*'),
+            'idpel' => trim((string) ($this->request->getGet('idpel') ?? '')),
+        ];
+
+        $resumeState = null;
+        $resumeToken = (string) (session('pelanggan_import_resume_token') ?? '');
+        if ($resumeToken !== '') {
+            $resumeState = $this->loadPelangganImportState($resumeToken);
+            if (! is_array($resumeState)) {
+                session()->remove('pelanggan_import_resume_token');
+            }
+        }
+
+        return view('master/pelanggan', [
+            'title' => 'Data Induk Langganan',
+            'pageHeading' => 'Data Induk Langganan',
+            'units' => $model->getUnits(),
+            'bulanOptions' => $model->getBulanOptions(),
+            'filters' => $filters,
+            'maxUploadMb' => $this->getRecommendedUploadLimitMb(),
+            'resumeState' => $resumeState,
+        ]);
+    }
+
+    public function pelangganData(): ResponseInterface
+    {
+        $draw = (int) ($this->request->getPost('draw') ?? 0);
+        $start = max(0, (int) ($this->request->getPost('start') ?? 0));
+        $length = (int) ($this->request->getPost('length') ?? 10);
+        if ($length < 1) {
+            $length = 10;
+        }
+
+        $filters = [
+            'unit' => (string) ($this->request->getPost('unit') ?? '*'),
+            'bulan' => (string) ($this->request->getPost('bulan') ?? '*'),
+            'idpel' => trim((string) ($this->request->getPost('idpel') ?? '')),
+            'search' => '',
+        ];
+
+        $orderIndex = (int) ($this->request->getPost('order')[0]['column'] ?? 0);
+        $orderDir = strtolower((string) ($this->request->getPost('order')[0]['dir'] ?? 'desc'));
+        if (! in_array($orderDir, ['asc', 'desc'], true)) {
+            $orderDir = 'desc';
+        }
+
+        $columnMap = [
+            0 => 'v_bulan_rekap',
+            1 => 'unitup',
+            2 => 'idpel',
+            3 => 'nama',
+            4 => 'namapnj',
+            5 => 'tarif',
+            6 => 'daya',
+            7 => 'kdpt_2',
+            8 => 'thblmut',
+            9 => 'jenis_mk',
+            10 => 'jenislayanan',
+            11 => 'frt',
+            12 => 'kogol',
+            13 => 'fkmkwh',
+            14 => 'nomor_meter_kwh',
+            15 => 'tanggal_pasang_rubah_app',
+            16 => 'merk_meter_kwh',
+            17 => 'type_meter_kwh',
+            18 => 'tahun_tera_meter_kwh',
+            19 => 'tahun_buat_meter_kwh',
+            20 => 'nomor_gardu',
+            21 => 'nomor_jurusan_tiang',
+            22 => 'nama_gardu',
+            23 => 'kapasitas_trafo',
+            24 => 'nomor_meter_prepaid',
+            25 => 'product',
+            26 => 'koordinat_x',
+            27 => 'koordinat_y',
+            28 => 'kdam',
+            29 => 'kdpembmeter',
+            30 => 'ket_kdpembmeter',
+            31 => 'status_dil',
+            32 => 'krn',
+            33 => 'vkrn',
+        ];
+        $orderBy = $columnMap[$orderIndex] ?? 'idpel';
+
+        $model = new PelangganMasterModel();
+        $total = $model->countAll();
+        $filteredBuilder = $model->getBuilder($filters);
+        $filtered = $filteredBuilder->countAllResults(false);
+        $rows = $filteredBuilder
+            ->orderBy($orderBy, $orderDir)
+            ->limit($length, $start)
+            ->get()
+            ->getResultArray();
+
+        $this->response->setHeader('X-CSRF-TOKEN', csrf_hash());
+
+        return $this->response->setJSON([
+            'draw' => $draw,
+            'recordsTotal' => $total,
+            'recordsFiltered' => $filtered,
+            'data' => $rows,
+        ]);
+    }
+
+    public function importPelanggan(): RedirectResponse
+    {
+        $file = $this->request->getFile('excel_file');
+        if (! $file || ! $file->isValid() || $file->hasMoved()) {
+            return redirect()->to('/C_Master/Pelanggan')->with('error', 'File upload tidak valid.');
+        }
+
+        $extension = strtolower((string) $file->getClientExtension());
+        if (! in_array($extension, ['xlsx', 'xls'], true)) {
+            return redirect()->to('/C_Master/Pelanggan')->with('error', 'Format file harus .xlsx atau .xls.');
+        }
+
+        $importRequirementError = $this->validateImportRequirements($extension);
+        if ($importRequirementError !== null) {
+            return redirect()->to('/C_Master/Pelanggan')->with('error', $importRequirementError);
+        }
+
+        $maxUploadMb = $this->getRecommendedUploadLimitMb();
+        if ($file->getSizeByUnit('mb') > $maxUploadMb) {
+            return redirect()->to('/C_Master/Pelanggan')->with('error', 'Ukuran file melebihi batas upload aplikasi (' . $maxUploadMb . ' MB).');
+        }
+
+        $tempName = $file->getRandomName();
+        $targetPath = WRITEPATH . 'uploads/' . $tempName;
+
+        try {
+            @set_time_limit(0);
+            @ini_set('memory_limit', '1024M');
+
+            $currentToken = (string) (session('pelanggan_import_resume_token') ?? '');
+            if ($currentToken !== '') {
+                $this->cleanupPelangganImportState($currentToken, true);
+                session()->remove('pelanggan_import_resume_token');
+            }
+
+            $file->move(WRITEPATH . 'uploads', $tempName);
+
+            $reader = IOFactory::createReaderForFile($targetPath);
+            $reader->setReadDataOnly(true);
+
+            $headerDetection = $this->detectImportHeader($reader, $targetPath, 20);
+            if (! is_array($headerDetection)) {
+                return redirect()->to('/C_Master/Pelanggan')->with('error', 'Kolom wajib IDPEL dan V_BULAN_REKAP tidak ditemukan pada file.');
+            }
+
+            $columnMap = is_array($headerDetection['column_map'] ?? null) ? $headerDetection['column_map'] : [];
+            $headerRowNumber = (int) ($headerDetection['header_row'] ?? 1);
+
+            $worksheets = $reader->listWorksheetInfo($targetPath);
+            $totalRows = (int) ($worksheets[0]['totalRows'] ?? 0);
+            if ($totalRows <= $headerRowNumber) {
+                return redirect()->to('/C_Master/Pelanggan')->with('error', 'File tidak memiliki data untuk diimport.');
+            }
+
+            $token = bin2hex(random_bytes(16));
+            $state = [
+                'token' => $token,
+                'file_path' => $targetPath,
+                'total_rows' => $totalRows,
+                'header_row' => $headerRowNumber,
+                'next_row' => $headerRowNumber + 1,
+                'column_map' => $columnMap,
+                'deleted_periods' => [],
+                'inserted_rows' => 0,
+                'failed_at_row' => null,
+                'updated_at' => date('c'),
+            ];
+            $this->savePelangganImportState($state);
+            session()->set('pelanggan_import_resume_token', $token);
+
+            return $this->continuePelangganImportByToken($token);
+        } catch (Throwable $e) {
+            log_message('error', 'MASTER_PELANGGAN_IMPORT_FAILED: {message}', ['message' => $e->getMessage()]);
+
+            $friendlyMessage = $this->buildFriendlyImportErrorMessage($e->getMessage());
+
+            return redirect()->to('/C_Master/Pelanggan')->with('error', $friendlyMessage);
+        }
+    }
+
+    public function resumeImportPelanggan(): RedirectResponse
+    {
+        $token = trim((string) ($this->request->getPost('resume_token') ?? session('pelanggan_import_resume_token') ?? ''));
+        if ($token === '') {
+            return redirect()->to('/C_Master/Pelanggan')->with('error', 'Token resume import tidak ditemukan.');
+        }
+
+        return $this->continuePelangganImportByToken($token);
+    }
+
+    public function cancelResumeImportPelanggan(): RedirectResponse
+    {
+        $token = trim((string) ($this->request->getPost('resume_token') ?? session('pelanggan_import_resume_token') ?? ''));
+        if ($token === '') {
+            return redirect()->to('/C_Master/Pelanggan')->with('error', 'Tidak ada proses resume import yang dapat dibatalkan.');
+        }
+
+        $this->cleanupPelangganImportState($token, true);
+        session()->remove('pelanggan_import_resume_token');
+
+        return redirect()->to('/C_Master/Pelanggan')->with('success', 'Resume import berhasil dibatalkan dan progress sementara dibersihkan.');
+    }
+
+    private function continuePelangganImportByToken(string $token): RedirectResponse
+    {
+        $state = $this->loadPelangganImportState($token);
+        if (! is_array($state)) {
+            session()->remove('pelanggan_import_resume_token');
+            return redirect()->to('/C_Master/Pelanggan')->with('error', 'Progress import tidak ditemukan atau sudah dibersihkan.');
+        }
+
+        $filePath = (string) ($state['file_path'] ?? '');
+        if ($filePath === '' || ! is_file($filePath)) {
+            $this->cleanupPelangganImportState($token, false);
+            session()->remove('pelanggan_import_resume_token');
+            return redirect()->to('/C_Master/Pelanggan')->with('error', 'File sumber import tidak ditemukan. Upload ulang file untuk memulai ulang.');
+        }
+
+        try {
+            @set_time_limit(0);
+            @ini_set('memory_limit', '1024M');
+
+            $resumeExtension = strtolower(pathinfo($filePath, PATHINFO_EXTENSION));
+            $importRequirementError = $this->validateImportRequirements($resumeExtension);
+            if ($importRequirementError !== null) {
+                return redirect()->to('/C_Master/Pelanggan')->with('error', $importRequirementError);
+            }
+
+            $reader = IOFactory::createReaderForFile($filePath);
+            $reader->setReadDataOnly(true);
+
+            $this->runPelangganImportChunks($reader, $state);
+
+            if ((int) ($state['inserted_rows'] ?? 0) < 1) {
+                $this->cleanupPelangganImportState($token, true);
+                session()->remove('pelanggan_import_resume_token');
+                return redirect()->to('/C_Master/Pelanggan')->with('error', 'Tidak ada data valid yang berhasil diimport.');
+            }
+
+            $insertedRows = (int) ($state['inserted_rows'] ?? 0);
+            $progressPercent = $this->calculateImportProgressPercent($state);
+            $this->cleanupPelangganImportState($token, true);
+            session()->remove('pelanggan_import_resume_token');
+
+            return redirect()->to('/C_Master/Pelanggan')->with('success', 'Import data induk langganan berhasil (' . $progressPercent . '%). Total baris tersimpan: ' . $insertedRows . '.');
+        } catch (Throwable $e) {
+            $state['failed_at_row'] = (int) ($state['next_row'] ?? 2);
+            $state['updated_at'] = date('c');
+            $this->savePelangganImportState($state);
+            session()->set('pelanggan_import_resume_token', $token);
+
+            log_message('error', 'MASTER_PELANGGAN_IMPORT_RESUME_FAILED: {message}', ['message' => $e->getMessage()]);
+
+            $failedRow = (int) ($state['failed_at_row'] ?? 2);
+            $progressPercent = $this->calculateImportProgressPercent($state);
+            $friendlyMessage = $this->buildFriendlyImportErrorMessage($e->getMessage());
+            return redirect()->to('/C_Master/Pelanggan')->with('error', $friendlyMessage . ' Import gagal di sekitar baris ' . $failedRow . ' (progress ' . $progressPercent . '%). Klik tombol "Lanjutkan Import" untuk melanjutkan proses.');
+        }
+    }
+
+    private function validateImportRequirements(string $extension): ?string
+    {
+        if ($extension === 'xlsx' && ! class_exists('ZipArchive')) {
+            return 'Import .xlsx membutuhkan ekstensi PHP zip (ZipArchive). Aktifkan ekstensi zip pada server, lalu coba lagi. Sementara itu Anda bisa gunakan file .xls.';
+        }
+
+        return null;
+    }
+
+    private function buildFriendlyImportErrorMessage(string $rawMessage): string
+    {
+        if (stripos($rawMessage, 'ZipArchive') !== false) {
+            return 'Import .xlsx membutuhkan ekstensi PHP zip (ZipArchive). Aktifkan ekstensi zip pada server, lalu coba lagi.';
+        }
+
+        return 'Import data induk langganan gagal diproses. ';
+    }
+
+    /**
+     * @param array<string, mixed> $state
+     */
+    private function calculateImportProgressPercent(array $state): int
+    {
+        $totalRows = max(1, ((int) ($state['total_rows'] ?? 1)) - 1);
+        $doneRows = max(0, ((int) ($state['next_row'] ?? 2)) - 2);
+
+        return min(100, (int) floor(($doneRows / $totalRows) * 100));
+    }
+
+    /**
+     * @param array<string, mixed> $state
+     */
+    private function runPelangganImportChunks($reader, array &$state): void
+    {
+        $db = db_connect();
+        $totalRows = max(2, (int) ($state['total_rows'] ?? 2));
+        $nextRow = max(2, (int) ($state['next_row'] ?? 2));
+        $columnMap = is_array($state['column_map'] ?? null) ? $state['column_map'] : [];
+        $deletedPeriods = is_array($state['deleted_periods'] ?? null) ? $state['deleted_periods'] : [];
+        $insertedRows = (int) ($state['inserted_rows'] ?? 0);
+
+        for ($startRow = $nextRow; $startRow <= $totalRows; $startRow += self::PELANGGAN_IMPORT_CHUNK_SIZE) {
+            $chunkFilter = new SheetChunkReadFilter($startRow, self::PELANGGAN_IMPORT_CHUNK_SIZE);
+            $reader->setReadFilter($chunkFilter);
+            $sheet = $reader->load((string) $state['file_path'])->getActiveSheet();
+
+            $endRow = min($totalRows, $startRow + self::PELANGGAN_IMPORT_CHUNK_SIZE - 1);
+            $chunkRows = [];
+            $chunkPeriods = [];
+
+            for ($row = $startRow; $row <= $endRow; $row++) {
+                $payload = [];
+                foreach ($columnMap as $field => $columnLetter) {
+                    $payload[$field] = $this->normalizeImportedValue(
+                        (string) $field,
+                        $sheet->getCell((string) $columnLetter . $row)->getCalculatedValue()
+                    );
+                }
+
+                $idpel = (string) ($payload['idpel'] ?? '');
+                $period = (string) ($payload['v_bulan_rekap'] ?? '');
+                if ($idpel === '' || $period === '') {
+                    continue;
+                }
+
+                if (! isset($deletedPeriods[$period])) {
+                    $chunkPeriods[$period] = true;
+                }
+
+                $chunkRows[] = $payload;
+            }
+
+            $db->transStart();
+            foreach (array_keys($chunkPeriods) as $period) {
+                $db->table(self::TABLE_PELANGGAN)->where('v_bulan_rekap', (int) $period)->delete();
+            }
+
+            if ($chunkRows !== []) {
+                $batchRows = [];
+                foreach ($chunkRows as $payload) {
+                    $batchRows[] = $payload;
+                    if (count($batchRows) >= self::PELANGGAN_IMPORT_BATCH_SIZE) {
+                        $db->table(self::TABLE_PELANGGAN)->insertBatch($batchRows);
+                        $insertedRows += count($batchRows);
+                        $batchRows = [];
+                    }
+                }
+
+                if ($batchRows !== []) {
+                    $db->table(self::TABLE_PELANGGAN)->insertBatch($batchRows);
+                    $insertedRows += count($batchRows);
+                }
+            }
+
+            $db->transComplete();
+            if (! $db->transStatus()) {
+                throw new \RuntimeException('Transaksi import per chunk gagal.');
+            }
+
+            foreach (array_keys($chunkPeriods) as $period) {
+                $deletedPeriods[$period] = true;
+            }
+
+            $state['deleted_periods'] = $deletedPeriods;
+            $state['inserted_rows'] = $insertedRows;
+            $state['next_row'] = $endRow + 1;
+            $state['failed_at_row'] = null;
+            $state['updated_at'] = date('c');
+            $this->savePelangganImportState($state);
+        }
+    }
+
+    /**
+     * @param array<string, mixed> $state
+     */
+    private function savePelangganImportState(array $state): void
+    {
+        $token = (string) ($state['token'] ?? '');
+        if ($token === '') {
+            throw new \RuntimeException('Token state import tidak valid.');
+        }
+
+        $path = $this->getPelangganImportStatePath($token);
+        file_put_contents($path, json_encode($state, JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT));
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    private function loadPelangganImportState(string $token): ?array
+    {
+        $path = $this->getPelangganImportStatePath($token);
+        if (! is_file($path)) {
+            return null;
+        }
+
+        $decoded = json_decode((string) file_get_contents($path), true);
+        return is_array($decoded) ? $decoded : null;
+    }
+
+    private function cleanupPelangganImportState(string $token, bool $deleteSourceFile): void
+    {
+        $state = $this->loadPelangganImportState($token);
+        if ($deleteSourceFile && is_array($state)) {
+            $filePath = (string) ($state['file_path'] ?? '');
+            if ($filePath !== '' && is_file($filePath)) {
+                @unlink($filePath);
+            }
+        }
+
+        $statePath = $this->getPelangganImportStatePath($token);
+        if (is_file($statePath)) {
+            @unlink($statePath);
+        }
+    }
+
+    private function getPelangganImportStatePath(string $token): string
+    {
+        $safeToken = preg_replace('/[^a-z0-9]/', '', strtolower($token)) ?? '';
+        if ($safeToken === '') {
+            throw new \RuntimeException('Token import tidak valid.');
+        }
+
+        return WRITEPATH . 'uploads/' . self::PELANGGAN_IMPORT_STATE_PREFIX . $safeToken . '.json';
+    }
+
+    /**
+     * @param array<string, mixed> $headerRow
+     * @return array<string, string>
+     */
+    private function buildImportColumnMap(array $headerRow): array
+    {
+        $aliases = [
+            'vbulanrekap' => 'v_bulan_rekap',
+            'unitup' => 'unitup',
+            'namapnj' => 'namapnj',
+            'thblmut' => 'thblmut',
+            'jenislayanan' => 'jenislayanan',
+            'nomormeterkwh' => 'nomor_meter_kwh',
+            'tanggalpasangrubahapp' => 'tanggal_pasang_rubah_app',
+            'merkmeterkwh' => 'merk_meter_kwh',
+            'typemeterkwh' => 'type_meter_kwh',
+            'tahunterameterkwh' => 'tahun_tera_meter_kwh',
+            'tahunbuatmeterkwh' => 'tahun_buat_meter_kwh',
+            'nomorgardu' => 'nomor_gardu',
+            'nomorjurusantiang' => 'nomor_jurusan_tiang',
+            'namagardu' => 'nama_gardu',
+            'kapasitastrafo' => 'kapasitas_trafo',
+            'nomormeterprepaid' => 'nomor_meter_prepaid',
+            'koordinatx' => 'koordinat_x',
+            'koordinaty' => 'koordinat_y',
+            'kdpembmeter' => 'kdpembmeter',
+            'ketkdpembmeter' => 'ket_kdpembmeter',
+        ];
+
+        $allowedFields = [
+            'v_bulan_rekap', 'unitup', 'idpel', 'nama', 'namapnj', 'tarif', 'daya', 'kdpt_2', 'thblmut',
+            'jenis_mk', 'jenislayanan', 'frt', 'kogol', 'fkmkwh', 'nomor_meter_kwh', 'tanggal_pasang_rubah_app',
+            'merk_meter_kwh', 'type_meter_kwh', 'tahun_tera_meter_kwh', 'tahun_buat_meter_kwh', 'nomor_gardu',
+            'nomor_jurusan_tiang', 'nama_gardu', 'kapasitas_trafo', 'nomor_meter_prepaid', 'product', 'koordinat_x',
+            'koordinat_y', 'kdam', 'kdpembmeter', 'ket_kdpembmeter', 'status_dil', 'krn', 'vkrn',
+        ];
+
+        $map = [];
+        foreach ($headerRow as $column => $header) {
+            $label = strtolower(preg_replace('/[^a-z0-9]+/', '', (string) $header) ?? '');
+            if ($label === '') {
+                continue;
+            }
+
+            $field = $aliases[$label] ?? $label;
+            if (! in_array($field, $allowedFields, true)) {
+                continue;
+            }
+
+            $map[$field] = (string) $column;
+        }
+
+        return $map;
+    }
+
+    /**
+     * @return array{header_row:int, column_map:array<string, string>}|null
+     */
+    private function detectImportHeader($reader, string $filePath, int $maxScanRows = 20): ?array
+    {
+        for ($rowNumber = 1; $rowNumber <= $maxScanRows; $rowNumber++) {
+            $headerFilter = new SheetChunkReadFilter($rowNumber, 1);
+            $reader->setReadFilter($headerFilter);
+            $headerSheet = $reader->load($filePath)->getActiveSheet();
+
+            $headerRow = $headerSheet->rangeToArray(
+                'A' . $rowNumber . ':' . $headerSheet->getHighestColumn() . $rowNumber,
+                null,
+                true,
+                true,
+                true
+            )[$rowNumber] ?? [];
+
+            $columnMap = $this->buildImportColumnMap($headerRow);
+            if (isset($columnMap['idpel']) && isset($columnMap['v_bulan_rekap'])) {
+                return [
+                    'header_row' => $rowNumber,
+                    'column_map' => $columnMap,
+                ];
+            }
+        }
+
+        return null;
+    }
+
+    private function normalizeImportedValue(string $field, mixed $value): mixed
+    {
+        if ($value === null) {
+            return null;
+        }
+
+        $raw = is_string($value) ? trim($value) : $value;
+        if ($raw === '') {
+            return null;
+        }
+
+        $intFields = [
+            'v_bulan_rekap', 'unitup', 'idpel', 'daya', 'thblmut', 'kogol', 'fkmkwh', 'nomor_meter_kwh',
+            'tanggal_pasang_rubah_app', 'tahun_tera_meter_kwh', 'tahun_buat_meter_kwh', 'kapasitas_trafo',
+            'nomor_meter_prepaid', 'product', 'krn', 'vkrn',
+        ];
+        $floatFields = ['koordinat_x', 'koordinat_y'];
+
+        if (in_array($field, $intFields, true)) {
+            if (is_numeric($raw)) {
+                return (int) round((float) $raw);
+            }
+
+            $normalized = preg_replace('/[^0-9\-]/', '', (string) $raw) ?? '';
+            return $normalized === '' ? null : (int) $normalized;
+        }
+
+        if (in_array($field, $floatFields, true)) {
+            if (is_numeric($raw)) {
+                return (float) $raw;
+            }
+
+            $normalized = str_replace(',', '.', (string) $raw);
+            return is_numeric($normalized) ? (float) $normalized : null;
+        }
+
+        return (string) $raw;
+    }
+
+    private function getRecommendedUploadLimitMb(): int
+    {
+        $uploadMax = $this->toBytes((string) ini_get('upload_max_filesize'));
+        $postMax = $this->toBytes((string) ini_get('post_max_size'));
+
+        $effective = min($uploadMax, $postMax);
+        if ($effective <= 0) {
+            return 64;
+        }
+
+        return max(1, (int) floor($effective / (1024 * 1024)));
+    }
+
+    private function toBytes(string $value): int
+    {
+        $trimmed = trim($value);
+        if ($trimmed === '') {
+            return 0;
+        }
+
+        $unit = strtolower(substr($trimmed, -1));
+        $number = (float) $trimmed;
+
+        if ($unit === 'g') {
+            return (int) ($number * 1024 * 1024 * 1024);
+        }
+        if ($unit === 'm') {
+            return (int) ($number * 1024 * 1024);
+        }
+        if ($unit === 'k') {
+            return (int) ($number * 1024);
+        }
+
+        return (int) $number;
+    }
+}
+
+class SheetChunkReadFilter implements IReadFilter
+{
+    private int $startRow;
+    private int $endRow;
+
+    public function __construct(int $startRow, int $chunkSize)
+    {
+        $this->startRow = $startRow;
+        $this->endRow = $startRow + $chunkSize - 1;
+    }
+
+    public function readCell($columnAddress, $row, $worksheetName = ''): bool
+    {
+        if ($row === 1) {
+            return true;
+        }
+
+        return $row >= $this->startRow && $row <= $this->endRow;
     }
 }

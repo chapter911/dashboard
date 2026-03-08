@@ -6,7 +6,7 @@ use CodeIgniter\Database\Migration;
 
 class NormalizeTrnSaldoPelangganSnakeCase extends Migration
 {
-    private const TABLE = 'trn_saldo_pelanggan';
+    private const TABLE = 'mst_data_induk_langganan';
 
     /**
      * @var array<string, array{new: string, definition: string}>
@@ -140,7 +140,7 @@ class NormalizeTrnSaldoPelangganSnakeCase extends Migration
         }
 
         if (! $hasPk) {
-            $this->db->query('ALTER TABLE trn_saldo_pelanggan ADD PRIMARY KEY (idpel, v_bulan_rekap)');
+            $this->db->query('ALTER TABLE mst_data_induk_langganan ADD PRIMARY KEY (idpel, v_bulan_rekap)');
         }
     }
 }

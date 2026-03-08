@@ -447,7 +447,7 @@ class LaporanModel extends Model
 
     public function getSaldoBuilder(array $filters): BaseBuilder
     {
-        $builder = $this->db->table('trn_saldo_pelanggan');
+        $builder = $this->db->table('mst_data_induk_langganan');
 
         if (($filters['unit'] ?? '*') !== '*') {
             $builder->where('unit_up', (int) $filters['unit']);
@@ -478,7 +478,7 @@ class LaporanModel extends Model
      */
     public function getSaldoBulanOptions(): array
     {
-        return $this->db->table('trn_saldo_pelanggan')
+        return $this->db->table('mst_data_induk_langganan')
             ->select('v_bulan_rekap')
             ->groupBy('v_bulan_rekap')
             ->orderBy('v_bulan_rekap', 'DESC')

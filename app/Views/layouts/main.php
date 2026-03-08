@@ -59,6 +59,39 @@
             border-color: var(--app-primary) !important;
         }
 
+        .btn-outline-primary {
+            color: var(--app-primary) !important;
+            border-color: rgba(var(--app-primary-rgb), 0.6) !important;
+        }
+
+        .btn-outline-primary:hover,
+        .btn-outline-primary:focus,
+        .btn-outline-primary:active,
+        .btn-check:checked + .btn-outline-primary,
+        .btn-outline-primary.active,
+        .show > .btn-outline-primary.dropdown-toggle {
+            color: #fff !important;
+            background-color: var(--app-primary) !important;
+            border-color: var(--app-primary) !important;
+        }
+
+        .btn-secondary,
+        .btn-secondary:hover,
+        .btn-secondary:focus,
+        .btn-secondary:active,
+        .btn-label-secondary,
+        .btn-label-secondary:hover,
+        .btn-label-secondary:focus,
+        .btn-label-secondary:active,
+        .btn-outline-secondary,
+        .btn-outline-secondary:hover,
+        .btn-outline-secondary:focus,
+        .btn-outline-secondary:active {
+            color: var(--app-primary) !important;
+            background-color: rgba(var(--app-primary-rgb), 0.1) !important;
+            border-color: rgba(var(--app-primary-rgb), 0.35) !important;
+        }
+
         .text-primary,
         a,
         a:hover {
@@ -137,6 +170,46 @@
             background-color: rgba(var(--app-primary-rgb), 0.02) !important;
         }
 
+        /* Global table header: center aligned with white borders. */
+        .table > :not(caption) > thead > tr > th,
+        .table thead th {
+            text-align: center !important;
+            vertical-align: middle !important;
+            border-color: #fff !important;
+            border-width: 1px !important;
+        }
+
+        /* Numeric defaults: body right aligned, footer centered. */
+        .table td.is-number,
+        .table th.is-number {
+            text-align: right !important;
+            font-variant-numeric: tabular-nums;
+        }
+
+        .table tfoot td.is-number,
+        .table tfoot th.is-number {
+            text-align: center !important;
+        }
+
+        input[type='date'],
+        input[type='month'],
+        input[type='datetime-local'] {
+            cursor: pointer;
+        }
+
+        /* Force label/badge family to use primary color scheme. */
+        .badge,
+        .bg-label-primary,
+        .bg-label-secondary,
+        .bg-label-success,
+        .bg-label-danger,
+        .bg-label-warning,
+        .bg-label-info {
+            background-color: rgba(var(--app-primary-rgb), 0.14) !important;
+            color: var(--app-primary) !important;
+            border-color: rgba(var(--app-primary-rgb), 0.35) !important;
+        }
+
         /* Global DataTables pagination theme follows app primary color. */
         .dataTables_wrapper .dataTables_paginate .pagination .page-item.active .page-link,
         .dataTables_wrapper .dataTables_paginate .pagination .page-item.active > .page-link {
@@ -196,6 +269,12 @@
 
         #layout-navbar .btn-outline-secondary {
             border-color: rgba(255, 255, 255, 0.65) !important;
+        }
+
+        #layout-navbar .badge.bg-light.text-danger {
+            background-color: #fff !important;
+            color: #d32f2f !important;
+            border-color: rgba(255, 255, 255, 0.85) !important;
         }
         <?php endif; ?>
     </style>
@@ -307,11 +386,15 @@
         (function () {
             const autoLogoutMs = <?= (int) $autoLogoutMs ?>;
             const shouldOpenChangePasswordModal = <?= session()->getFlashdata('open_change_password_modal') ? 'true' : 'false' ?>;
+            let globalSwalLoadingActive = false;
+            let ajaxLoadingCount = 0;
 
             function showSwalLoading(title) {
                 if (!window.Swal) {
                     return;
                 }
+
+                globalSwalLoadingActive = true;
 
                 Swal.fire({
                     title: title,
@@ -320,6 +403,73 @@
                     showConfirmButton: false,
                     didOpen: function () {
                         Swal.showLoading();
+                    }
+                });
+            }
+
+            function openNativeDatePicker(inputElement) {
+                if (!(inputElement instanceof HTMLInputElement)) {
+                    return;
+                }
+
+                const supportedTypes = ['date', 'month', 'datetime-local'];
+                if (!supportedTypes.includes(inputElement.type)) {
+                    return;
+                }
+
+                if (typeof inputElement.showPicker === 'function') {
+                    try {
+                        inputElement.showPicker();
+                    } catch (_error) {
+                        // Ignore browser restrictions and keep native fallback behavior.
+                    }
+                }
+            }
+
+            function closeSwalLoading() {
+                if (!window.Swal || !globalSwalLoadingActive) {
+                    return;
+                }
+
+                globalSwalLoadingActive = false;
+                if (Swal.isVisible()) {
+                    Swal.close();
+                }
+            }
+
+            function shouldSkipAjaxLoading(settings) {
+                if (!settings) {
+                    return false;
+                }
+
+                if (settings.skipSwalLoading === true) {
+                    return true;
+                }
+
+                const url = String(settings.url || '').toLowerCase();
+                return url.includes('/logout');
+            }
+
+            if (window.jQuery) {
+                window.jQuery(document).ajaxSend(function (_event, _jqXHR, settings) {
+                    if (shouldSkipAjaxLoading(settings)) {
+                        return;
+                    }
+
+                    ajaxLoadingCount += 1;
+                    if (ajaxLoadingCount === 1) {
+                        showSwalLoading((settings && settings.loadingText) || 'Memproses data...');
+                    }
+                });
+
+                window.jQuery(document).ajaxComplete(function (_event, _jqXHR, settings) {
+                    if (shouldSkipAjaxLoading(settings)) {
+                        return;
+                    }
+
+                    ajaxLoadingCount = Math.max(0, ajaxLoadingCount - 1);
+                    if (ajaxLoadingCount === 0) {
+                        closeSwalLoading();
                     }
                 });
             }
@@ -361,6 +511,33 @@
 
                 const title = trigger.dataset.loadingText || 'Memuat data...';
                 showSwalLoading(title);
+            });
+
+            document.addEventListener('pointerdown', function (event) {
+                const target = event.target;
+                if (!(target instanceof Element)) {
+                    return;
+                }
+
+                const input = target.closest('input[type="date"], input[type="month"], input[type="datetime-local"]');
+                if (!input) {
+                    return;
+                }
+
+                window.setTimeout(function () {
+                    openNativeDatePicker(input);
+                }, 0);
+            });
+
+            document.addEventListener('focusin', function (event) {
+                const target = event.target;
+                if (!(target instanceof HTMLInputElement)) {
+                    return;
+                }
+
+                if (target.matches('input[type="date"], input[type="month"], input[type="datetime-local"]')) {
+                    openNativeDatePicker(target);
+                }
             });
 
             let idleTimerId = null;
@@ -478,6 +655,114 @@
                     const modal = new window.bootstrap.Modal(modalElement);
                     modal.show();
                 }
+            }
+        })();
+    </script>
+    <script>
+        (function () {
+            'use strict';
+
+            var excludedHeaderTokens = ['id', 'nomor', 'bulan', 'thbl', 'tahun', 'kode', 'unit', 'krn', 'vkrn', 'kdam', 'kd'];
+
+            function looksNumeric(value) {
+                var text = String(value || '').trim();
+                if (text === '' || text === '-' || text.indexOf('%') !== -1) {
+                    return false;
+                }
+
+                if (/[a-zA-Z]/.test(text)) {
+                    return false;
+                }
+
+                return /^-?\d+(?:[\.,]\d+)?$/.test(text) || /^-?\d{1,3}(?:\.\d{3})+(?:,\d+)?$/.test(text);
+            }
+
+            function parseNumeric(text) {
+                var value = String(text || '').trim();
+                if (/^-?\d{1,3}(?:\.\d{3})+(?:,\d+)?$/.test(value)) {
+                    value = value.replace(/\./g, '').replace(',', '.');
+                } else if (/^-?\d+,\d+$/.test(value)) {
+                    value = value.replace(',', '.');
+                }
+
+                var parsed = Number(value);
+                return Number.isFinite(parsed) ? parsed : null;
+            }
+
+            function shouldExcludeHeader(headerText) {
+                var normalized = String(headerText || '').toLowerCase();
+                return excludedHeaderTokens.some(function (token) {
+                    return normalized.indexOf(token) !== -1;
+                });
+            }
+
+            function formatNumericCell(cell, forceCenter) {
+                if (!cell) {
+                    return;
+                }
+
+                var rawText = String(cell.textContent || '').trim();
+                if (!looksNumeric(rawText)) {
+                    return;
+                }
+
+                var numericValue = parseNumeric(rawText);
+                if (numericValue === null) {
+                    return;
+                }
+
+                var fractionMatch = rawText.match(/[\.,](\d+)$/);
+                var fractionDigits = fractionMatch ? Math.min(4, fractionMatch[1].length) : 0;
+                cell.textContent = new Intl.NumberFormat('id-ID', {
+                    minimumFractionDigits: fractionDigits,
+                    maximumFractionDigits: fractionDigits
+                }).format(numericValue);
+
+                cell.classList.add('is-number');
+                if (forceCenter) {
+                    cell.style.textAlign = 'center';
+                }
+            }
+
+            function applyGlobalTableFormatting() {
+                var tables = document.querySelectorAll('table.table');
+                tables.forEach(function (table) {
+                    var headerCells = table.querySelectorAll('thead th');
+                    var excludedIndexes = {};
+
+                    headerCells.forEach(function (th, index) {
+                        if (shouldExcludeHeader(th.textContent)) {
+                            excludedIndexes[index] = true;
+                        }
+                    });
+
+                    var bodyRows = table.querySelectorAll('tbody tr');
+                    bodyRows.forEach(function (tr) {
+                        var cells = tr.querySelectorAll('td');
+                        cells.forEach(function (td, index) {
+                            if (excludedIndexes[index]) {
+                                return;
+                            }
+
+                            formatNumericCell(td, false);
+                        });
+                    });
+
+                    var footCells = table.querySelectorAll('tfoot td, tfoot th');
+                    footCells.forEach(function (cell) {
+                        formatNumericCell(cell, true);
+                    });
+                });
+            }
+
+            document.addEventListener('DOMContentLoaded', function () {
+                applyGlobalTableFormatting();
+            });
+
+            if (window.jQuery) {
+                window.jQuery(document).on('draw.dt', function () {
+                    applyGlobalTableFormatting();
+                });
             }
         })();
     </script>

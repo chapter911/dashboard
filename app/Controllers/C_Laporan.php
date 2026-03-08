@@ -672,7 +672,7 @@ class C_Laporan extends BaseController
 
         $orderBy = $columnMap[$orderIndex] ?? 'idpel';
 
-        $total = $this->db->table('trn_saldo_pelanggan')->countAllResults();
+        $total = $this->db->table('mst_data_induk_langganan')->countAllResults();
 
         $filteredBuilder = $this->laporanModel->getSaldoBuilder($filters);
         $filtered = $filteredBuilder->countAllResults(false);
@@ -743,7 +743,7 @@ class C_Laporan extends BaseController
         }
 
         try {
-            $this->db->table('trn_saldo_pelanggan')
+            $this->db->table('mst_data_induk_langganan')
                 ->where('idpel', $idpel)
                 ->where('v_bulan_rekap', $bulan)
                 ->update($payload);

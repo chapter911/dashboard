@@ -51,6 +51,11 @@ $routes->get('C_Utility/LoginHistory', 'C_Utility::loginHistoryIndex', ['filter'
 $routes->get('C_Master/KategoriTegangan', 'C_Master::kategoriTegangan', ['filter' => 'auth']);
 $routes->post('C_Master/KategoriTegangan/save', 'C_Master::saveKategoriTegangan', ['filter' => 'auth']);
 $routes->post('C_Master/KategoriTegangan/delete', 'C_Master::deleteKategoriTegangan', ['filter' => 'auth']);
+$routes->get('C_Master/Pelanggan', 'C_Master::pelanggan', ['filter' => 'auth']);
+$routes->post('C_Master/Pelanggan/data', 'C_Master::pelangganData', ['filter' => 'auth']);
+$routes->post('C_Master/Pelanggan/import', 'C_Master::importPelanggan', ['filter' => 'auth']);
+$routes->post('C_Master/Pelanggan/resume', 'C_Master::resumeImportPelanggan', ['filter' => 'auth']);
+$routes->post('C_Master/Pelanggan/resume/cancel', 'C_Master::cancelResumeImportPelanggan', ['filter' => 'auth']);
 
 $routes->get('C_Laporan', 'C_Laporan::index', ['filter' => 'auth']);
 $routes->get('C_Laporan/Index', 'C_Laporan::index', ['filter' => 'auth']);

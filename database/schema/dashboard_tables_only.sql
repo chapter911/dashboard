@@ -510,8 +510,8 @@ CREATE TABLE `trn_pssd`  (
   INDEX `idx_trn_pssd_unit_periode`(`unit_id` ASC, `periode` ASC) USING BTREE
 ) ENGINE = InnoDB AUTO_INCREMENT = 14257 CHARACTER SET = utf8mb4 COLLATE = utf8mb4_unicode_ci ROW_FORMAT = Dynamic;
 
-DROP TABLE IF EXISTS `trn_saldo_pelanggan`;
-CREATE TABLE `trn_saldo_pelanggan`  (
+DROP TABLE IF EXISTS `mst_data_induk_langganan`;
+CREATE TABLE `mst_data_induk_langganan`  (
   `v_bulan_rekap` int NOT NULL,
   `unit_up` int NULL DEFAULT NULL,
   `idpel` bigint NOT NULL,

@@ -47,7 +47,7 @@ $p2tlPercent = $sumTahunanTarget > 0 ? ($sumTahunanRealisasi * 100 / $sumTahunan
 $bulananPercent = $sumBulananTarget > 0 ? ($sumBulananRealisasi * 100 / $sumBulananTarget) : 0;
 
 $topPerformance = array_slice($performance, 0, 3);
-$bottomPerformance = array_slice(array_reverse($performance), 0, 3);
+$bottomPerformance = array_slice($performance, -3);
 
 $hitrateSorted = $hitrate;
 usort($hitrateSorted, static fn(array $a, array $b): int => ((float) ($b['persentase'] ?? 0)) <=> ((float) ($a['persentase'] ?? 0)));
@@ -82,6 +82,70 @@ $hitrateTop = array_slice($hitrateSorted, 0, 5);
     .mini-table td,
     .mini-table th {
         padding: 0.55rem 0.6rem;
+    }
+
+    .unit-performance-list {
+        list-style: none;
+        padding: 0;
+        margin: 0;
+    }
+
+    .unit-performance-item {
+        display: flex;
+        align-items: center;
+        gap: 0.85rem;
+        margin-bottom: 1rem;
+    }
+
+    .unit-performance-item:last-child {
+        margin-bottom: 0;
+    }
+
+    .unit-performance-icon {
+        width: 2.2rem;
+        height: 2.2rem;
+        border-radius: 0.5rem;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+    }
+
+    .unit-performance-icon.top {
+        background: rgba(46, 204, 113, 0.18);
+        color: #2ecc71;
+    }
+
+    .unit-performance-icon.bottom {
+        background: rgba(255, 77, 79, 0.14);
+        color: #ff4d4f;
+    }
+
+    .unit-performance-name {
+        margin: 0;
+        font-size: 1rem;
+        font-weight: 600;
+        line-height: 1.2;
+    }
+
+    .unit-performance-meta {
+        color: #6f7482;
+        font-size: 0.875rem;
+    }
+
+    .unit-performance-pct {
+        font-weight: 700;
+        font-size: 1rem;
+        display: inline-flex;
+        align-items: center;
+        gap: 0.2rem;
+    }
+
+    .unit-performance-pct.top {
+        color: #2ecc71;
+    }
+
+    .unit-performance-pct.bottom {
+        color: #ff4d4f;
     }
 </style>
 
@@ -165,8 +229,8 @@ $hitrateTop = array_slice($hitrateSorted, 0, 5);
                 <div class="col-lg-5 col-md-12 mb-3 mb-lg-0">
                     <div class="mb-2"><strong>Total Realisasi</strong><div><?= number_format($sumTahunanRealisasi, 0, ',', '.') ?></div></div>
                     <div class="mb-2"><strong>Target Tahunan</strong><div><?= number_format($sumTahunanTarget, 0, ',', '.') ?></div></div>
-                    <div class="mb-2"><strong>Realisasi Bulan Ini</strong><div><?= number_format($sumBulananTarget, 0, ',', '.') ?></div></div>
-                    <div><strong>Target Bulan Ini</strong><div><?= number_format($sumBulananRealisasi, 0, ',', '.') ?></div></div>
+                    <div class="mb-2"><strong>Realisasi Bulan Ini</strong><div><?= number_format($sumBulananRealisasi, 0, ',', '.') ?></div></div>
+                    <div><strong>Target Bulan Ini</strong><div><?= number_format($sumBulananTarget, 0, ',', '.') ?></div></div>
                 </div>
                 <div class="col-lg-7 col-md-12">
                     <div id="chart_ganti_meter"></div>
@@ -199,24 +263,24 @@ $hitrateTop = array_slice($hitrateSorted, 0, 5);
         <div class="card h-100">
             <div class="card-header">
                 <h5 class="mb-0">Unit Performance</h5>
-                <small class="text-muted">Top 3 dan Bottom 3 realisasi</small>
+                <small class="text-muted">Performa Realisasi Tahunan</small>
             </div>
             <div class="card-body">
-                <ul class="p-0 m-0" style="list-style:none;">
+                <ul class="unit-performance-list">
                     <?php foreach ($topPerformance as $row): ?>
                         <?php
                         $target = (float) ($row['target'] ?? 0);
                         $realisasi = (float) ($row['realisasi'] ?? 0);
                         $pct = $target > 0 ? ($realisasi * 100 / $target) : 0;
                         ?>
-                        <li class="d-flex align-items-center mb-3">
-                            <div class="badge rounded bg-label-success p-1_5 me-3"><i class="ti ti-bolt ti-md"></i></div>
+                        <li class="unit-performance-item">
+                            <div class="unit-performance-icon top"><i class="ti ti-bolt"></i></div>
                             <div class="d-flex w-100 flex-wrap align-items-center justify-content-between gap-2">
                                 <div class="me-2">
-                                    <h6 class="mb-0 me-1"><?= esc((string) ($row['unit_name'] ?? '-')) ?></h6>
-                                    <small class="text-body"><?= number_format($realisasi, 0, ',', '.') ?> / <?= number_format($target, 0, ',', '.') ?></small>
+                                    <h6 class="unit-performance-name"><?= esc((string) ($row['unit_name'] ?? '-')) ?></h6>
+                                    <small class="unit-performance-meta"><?= number_format($realisasi, 0, ',', '.') ?> / <?= number_format($target, 0, ',', '.') ?></small>
                                 </div>
-                                <div class="text-success fw-semibold"><?= number_format($pct, 0, ',', '.') ?>%</div>
+                                <div class="unit-performance-pct top"><i class="ti ti-chevron-up"></i><?= number_format($pct, 0, ',', '.') ?>%</div>
                             </div>
                         </li>
                     <?php endforeach; ?>
@@ -227,14 +291,14 @@ $hitrateTop = array_slice($hitrateSorted, 0, 5);
                         $realisasi = (float) ($row['realisasi'] ?? 0);
                         $pct = $target > 0 ? ($realisasi * 100 / $target) : 0;
                         ?>
-                        <li class="d-flex align-items-center mb-3">
-                            <div class="badge rounded bg-label-danger p-1_5 me-3"><i class="ti ti-bolt ti-md"></i></div>
+                        <li class="unit-performance-item">
+                            <div class="unit-performance-icon bottom"><i class="ti ti-bolt"></i></div>
                             <div class="d-flex w-100 flex-wrap align-items-center justify-content-between gap-2">
                                 <div class="me-2">
-                                    <h6 class="mb-0 me-1"><?= esc((string) ($row['unit_name'] ?? '-')) ?></h6>
-                                    <small class="text-body"><?= number_format($realisasi, 0, ',', '.') ?> / <?= number_format($target, 0, ',', '.') ?></small>
+                                    <h6 class="unit-performance-name"><?= esc((string) ($row['unit_name'] ?? '-')) ?></h6>
+                                    <small class="unit-performance-meta"><?= number_format($realisasi, 0, ',', '.') ?> / <?= number_format($target, 0, ',', '.') ?></small>
                                 </div>
-                                <div class="text-danger fw-semibold"><?= number_format($pct, 0, ',', '.') ?>%</div>
+                                <div class="unit-performance-pct bottom"><i class="ti ti-chevron-down"></i><?= number_format($pct, 0, ',', '.') ?>%</div>
                             </div>
                         </li>
                     <?php endforeach; ?>

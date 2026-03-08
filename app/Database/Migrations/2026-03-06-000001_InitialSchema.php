@@ -50,7 +50,7 @@ class InitialSchema extends Migration
             'trn_target_realisasi',
             'trn_target_laporan',
             'trn_susut',
-            'trn_saldo_pelanggan',
+            'mst_data_induk_langganan',
             'trn_pssd',
             'trn_p2tl_analisa',
             'trn_p2tl',

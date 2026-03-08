@@ -302,7 +302,7 @@ abstract class BaseController extends Controller
                 ]);
             }
 
-            $sidebarMenus = $builtMenus;
+            $sidebarMenus = $this->filterHiddenMenus($builtMenus);
         } catch (Throwable $e) {
             log_message('warning', 'SIDEBAR_MENU_UNAVAILABLE: {message}', ['message' => $e->getMessage()]);
         }
@@ -319,6 +319,36 @@ abstract class BaseController extends Controller
         }
 
         return trim(str_replace('index.php/', '', $cleanLink), '/');
+    }
+
+    /**
+     * @param list<array<string, mixed>> $menus
+     * @return list<array<string, mixed>>
+     */
+    private function filterHiddenMenus(array $menus): array
+    {
+        $hiddenLinks = [
+            'c_saldo/upload',
+            'c_analisapembelian',
+            'c_analisapembelian/index',
+        ];
+
+        $result = [];
+        foreach ($menus as $menu) {
+            $link = strtolower(trim((string) ($menu['link'] ?? '#'), '/'));
+            $label = strtolower(trim((string) ($menu['label'] ?? '')));
+
+            $children = is_array($menu['children'] ?? null) ? $this->filterHiddenMenus($menu['children']) : [];
+
+            if (in_array($link, $hiddenLinks, true) || $label === 'analisa pelanggan') {
+                continue;
+            }
+
+            $menu['children'] = $children;
+            $result[] = $menu;
+        }
+
+        return $result;
     }
 
     private function isValidHexColor(?string $color): bool
