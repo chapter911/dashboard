@@ -30,7 +30,7 @@ class Auth extends BaseController
     {
         $rules = [
             'username' => 'required|min_length[3]|max_length[100]',
-            'password' => 'required|min_length[8]|max_length[255]',
+            'password' => 'required|min_length[3]|max_length[255]',
         ];
 
         if (! $this->validate($rules)) {
@@ -62,14 +62,14 @@ class Auth extends BaseController
             );
         }
 
-        if (! $this->isStrongPassword($password)) {
-            $this->logAudit($username, 'LOGIN_FAILED', false, $context, 'WEAK_PASSWORD_POLICY');
+        // if (! $this->isStrongPassword($password)) {
+        //     $this->logAudit($username, 'LOGIN_FAILED', false, $context, 'WEAK_PASSWORD_POLICY');
 
-            return redirect()->back()->withInput()->with(
-                'error',
-                'Password harus minimal 8 karakter dan mengandung huruf besar, huruf kecil, angka, serta simbol.'
-            );
-        }
+        //     return redirect()->back()->withInput()->with(
+        //         'error',
+        //         'Password harus minimal 8 karakter dan mengandung huruf besar, huruf kecil, angka, serta simbol.'
+        //     );
+        // }
 
         $userModel = new UserModel();
 
