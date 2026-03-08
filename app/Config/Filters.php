@@ -75,7 +75,18 @@ class Filters extends BaseFilters
     public array $globals = [
         'before' => [
             // 'honeypot',
-            'csrf',
+            'csrf' => [
+                'except' => [
+                    'C_P2TL/getViewIndex',
+                    'C_P2TL/getDataIndex',
+                    'C_P2TL/getChartIndex',
+                    'C_P2TL/getDataHitrate',
+                    'C_P2TL/getChartHitrate',
+                    'C_P2TL/ajaxAnalisa',
+                    'C_P2TL/getAnalisaDetailAjax',
+                    'C_P2TL/getAnalisaGrafikAjax',
+                ],
+            ],
             // 'invalidchars',
         ],
         'after' => [

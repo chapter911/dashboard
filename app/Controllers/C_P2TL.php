@@ -1,0 +1,1233 @@
+<?php
+
+namespace App\Controllers;
+
+use App\Models\P2TLModel;
+use CodeIgniter\HTTP\RedirectResponse;
+use CodeIgniter\HTTP\ResponseInterface;
+use PhpOffice\PhpSpreadsheet\IOFactory;
+use Throwable;
+
+class C_P2TL extends BaseController
+{
+    private P2TLModel $p2tlModel;
+
+    public function __construct()
+    {
+        $this->p2tlModel = new P2TLModel();
+    }
+
+    public function index(): string
+    {
+        return view('p2tl/index', [
+            'title' => 'Dashboard P2TL',
+            'pageHeading' => 'Dashboard P2TL',
+        ]);
+    }
+
+    public function getViewIndex(): string
+    {
+        $this->response->setHeader('X-CSRF-TOKEN', csrf_hash());
+
+        $jenis = strtoupper((string) ($this->request->getPost('jenis_akumulasi') ?? 'TAHUNAN'));
+
+        if ($jenis === 'BULANAN') {
+            return view('p2tl/index_bulanan');
+        }
+
+        if ($jenis === 'HARIAN') {
+            return view('p2tl/index_harian');
+        }
+
+        if (in_array($jenis, ['MINGGUAN', 'TRIWULAN', 'SEMESTER'], true)) {
+            return view('p2tl/index_pengembangan', [
+                'jenisAkumulasi' => $jenis,
+            ]);
+        }
+
+        return view('p2tl/index_tahunan');
+    }
+
+    public function getDataIndex(): string
+    {
+        $payload = $this->resolveAkumulasiPayload();
+        $this->response->setHeader('X-CSRF-TOKEN', csrf_hash());
+
+        return view('p2tl/ajax_index', [
+            'data' => $payload['data'],
+            'jenis_akumulasi' => $payload['jenis_akumulasi'],
+        ]);
+    }
+
+    public function getChartIndex(): string
+    {
+        $payload = $this->resolveAkumulasiPayload();
+        $this->response->setHeader('X-CSRF-TOKEN', csrf_hash());
+
+        return view('p2tl/ajax_index_chart', [
+            'data' => $payload['data'],
+            'jenis_akumulasi' => $payload['jenis_akumulasi'],
+        ]);
+    }
+
+    public function getDataHitrate(): string
+    {
+        $tanggalAwal = (string) ($this->request->getPost('tanggal_awal') ?? date('Y-01-01'));
+        $tanggalAkhir = (string) ($this->request->getPost('tanggal_akhir') ?? date('Y-m-t'));
+        $sortir = (string) ($this->request->getPost('sortir_hitrate') ?? '1');
+
+        $rows = $this->p2tlModel->getHitrateRange($tanggalAwal, $tanggalAkhir, $sortir);
+        $this->response->setHeader('X-CSRF-TOKEN', csrf_hash());
+
+        return view('p2tl/ajax_hitrate', [
+            'data' => $rows,
+        ]);
+    }
+
+    public function getChartHitrate(): string
+    {
+        $tanggalAwal = (string) ($this->request->getPost('tanggal_awal') ?? date('Y-01-01'));
+        $tanggalAkhir = (string) ($this->request->getPost('tanggal_akhir') ?? date('Y-m-t'));
+        $sortir = (string) ($this->request->getPost('sortir_hitrate') ?? '1');
+
+        $rows = $this->p2tlModel->getHitrateRange($tanggalAwal, $tanggalAkhir, $sortir);
+        $this->response->setHeader('X-CSRF-TOKEN', csrf_hash());
+
+        return view('p2tl/ajax_hitrate_chart', [
+            'data' => $rows,
+        ]);
+    }
+
+    public function exportData(): ResponseInterface
+    {
+        $payload = $this->resolveAkumulasiPayload();
+        $rows = $payload['data'];
+        $jenis = $payload['jenis_akumulasi'];
+
+        $spreadsheet = new \PhpOffice\PhpSpreadsheet\Spreadsheet();
+        $sheet = $spreadsheet->getActiveSheet();
+        $sheet->setTitle('Dashboard P2TL');
+
+        $sheet->setCellValue('A1', 'UNIT');
+        $sheet->setCellValue('B1', $jenis === 'HARIAN' ? 'TANGGAL' : 'PERIODE');
+        $sheet->setCellValue('C1', 'TARGET');
+        $sheet->setCellValue('D1', 'REALISASI');
+        $sheet->setCellValue('E1', 'PERSENTASE');
+
+        $rowNum = 2;
+        foreach ($rows as $row) {
+            $target = (float) ($row['target'] ?? 0);
+            $realisasi = (float) ($row['realisasi'] ?? 0);
+            $persen = $target > 0 ? ($realisasi / $target * 100) : (float) ($row['persentase'] ?? 0);
+
+            $sheet->setCellValue('A' . $rowNum, (string) ($row['unit_name'] ?? '-'));
+            if ($jenis === 'HARIAN') {
+                $sheet->setCellValue('B' . $rowNum, (string) ($row['tanggal_register'] ?? '-'));
+            } elseif ($jenis === 'BULANAN') {
+                $sheet->setCellValue('B' . $rowNum, (string) (($row['tahun'] ?? '') . '-' . str_pad((string) ($row['bulan'] ?? ''), 2, '0', STR_PAD_LEFT)));
+            } else {
+                $sheet->setCellValue('B' . $rowNum, (string) ($row['tahun'] ?? '-'));
+            }
+
+            $sheet->setCellValue('C' . $rowNum, $target);
+            $sheet->setCellValue('D' . $rowNum, $realisasi);
+            $sheet->setCellValue('E' . $rowNum, $persen / 100);
+            $rowNum++;
+        }
+
+        $sheet->getStyle('A1:E1')->getFont()->setBold(true);
+        $sheet->getStyle('C2:D' . max(2, $rowNum - 1))->getNumberFormat()->setFormatCode('#,##0');
+        $sheet->getStyle('E2:E' . max(2, $rowNum - 1))->getNumberFormat()->setFormatCode('0.00%');
+
+        foreach (range('A', 'E') as $col) {
+            $sheet->getColumnDimension($col)->setAutoSize(true);
+        }
+
+        $writer = new \PhpOffice\PhpSpreadsheet\Writer\Xlsx($spreadsheet);
+        ob_start();
+        $writer->save('php://output');
+        $binary = (string) ob_get_clean();
+
+        return $this->response
+            ->setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+            ->setHeader('Content-Disposition', 'attachment; filename="Dashboard_P2TL_' . date('Ymd_His') . '.xlsx"')
+            ->setBody($binary);
+    }
+
+    public function exportDataHitrate(): ResponseInterface
+    {
+        $tanggalAwal = (string) ($this->request->getGet('tanggal_awal') ?? date('Y-01-01'));
+        $tanggalAkhir = (string) ($this->request->getGet('tanggal_akhir') ?? date('Y-m-t'));
+        $sortir = (string) ($this->request->getGet('sortir_hitrate') ?? '1');
+        $rows = $this->p2tlModel->getHitrateRange($tanggalAwal, $tanggalAkhir, $sortir);
+
+        $spreadsheet = new \PhpOffice\PhpSpreadsheet\Spreadsheet();
+        $sheet = $spreadsheet->getActiveSheet();
+        $sheet->setTitle('Hitrate');
+        $sheet->fromArray(['NO', 'UNIT', 'PERIKSA', 'TEMUAN', 'PERSENTASE'], null, 'A1');
+
+        $no = 1;
+        $rowNum = 2;
+        foreach ($rows as $row) {
+            $periksa = (float) ($row['jumlah_periksa'] ?? 0);
+            $temuan = (float) ($row['jumlah_temuan'] ?? 0);
+            $persentase = $periksa > 0 ? ($temuan / $periksa * 100) : (float) ($row['persentase'] ?? 0);
+            $sheet->fromArray([
+                $no++,
+                (string) ($row['unit_name'] ?? '-'),
+                $periksa,
+                $temuan,
+                $persentase / 100,
+            ], null, 'A' . $rowNum);
+            $rowNum++;
+        }
+
+        $sheet->getStyle('A1:E1')->getFont()->setBold(true);
+        $sheet->getStyle('C2:D' . max(2, $rowNum - 1))->getNumberFormat()->setFormatCode('#,##0');
+        $sheet->getStyle('E2:E' . max(2, $rowNum - 1))->getNumberFormat()->setFormatCode('0.00%');
+        foreach (range('A', 'E') as $col) {
+            $sheet->getColumnDimension($col)->setAutoSize(true);
+        }
+
+        $writer = new \PhpOffice\PhpSpreadsheet\Writer\Xlsx($spreadsheet);
+        ob_start();
+        $writer->save('php://output');
+        $binary = (string) ob_get_clean();
+
+        return $this->response
+            ->setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+            ->setHeader('Content-Disposition', 'attachment; filename="Dashboard_P2TL_Hitrate_' . date('Ymd_His') . '.xlsx"')
+            ->setBody($binary);
+    }
+
+    public function ajaxP2TL(): ResponseInterface
+    {
+        $draw = (int) ($this->request->getPost('draw') ?? 0);
+        $start = max(0, (int) ($this->request->getPost('start') ?? 0));
+        $length = (int) ($this->request->getPost('length') ?? 10);
+        if ($length < 1) {
+            $length = 10;
+        }
+
+        $filters = [
+            'unit' => (string) ($this->request->getPost('unit') ?? '*'),
+            'tanggal_awal' => (string) ($this->request->getPost('tanggal_awal') ?? ''),
+            'tanggal_akhir' => (string) ($this->request->getPost('tanggal_akhir') ?? ''),
+            'idpel' => (string) ($this->request->getPost('idpel') ?? ''),
+        ];
+
+        $isAdmin = (int) (session('group_id') ?? 0) === 1;
+        $userUnitId = session('unit_id') !== null ? (int) session('unit_id') : null;
+        $search = (string) ($this->request->getPost('search')['value'] ?? '');
+
+        $result = $this->p2tlModel->getP2TLDatatable($filters, $start, $length, $search, $isAdmin, $userUnitId);
+
+        $data = [];
+        foreach ($result['rows'] as $row) {
+            $data[] = [
+                (string) ($row['no_agenda'] ?? ''),
+                (string) ($row['idpel'] ?? ''),
+                (string) ($row['nama'] ?? ''),
+                (string) ($row['gol'] ?? ''),
+                (string) ($row['alamat'] ?? ''),
+                number_format((float) ($row['daya'] ?? 0), 0, ',', '.'),
+                number_format((float) ($row['kwh'] ?? 0), 0, ',', '.'),
+                number_format((float) ($row['rupiah_total'] ?? 0), 0, ',', '.'),
+                (string) ($row['tanggal_register'] ?? ''),
+                (string) ($row['nomor_register'] ?? ''),
+                (string) ($row['unit_name'] ?? ''),
+            ];
+        }
+
+        $this->response->setHeader('X-CSRF-TOKEN', csrf_hash());
+        return $this->response->setJSON([
+            'draw' => $draw,
+            'recordsTotal' => $result['total'],
+            'recordsFiltered' => $result['filtered'],
+            'data' => $data,
+        ]);
+    }
+
+    public function importData(): RedirectResponse
+    {
+        $file = $this->request->getFile('file_import');
+        if (! $file || ! $file->isValid() || $file->hasMoved()) {
+            return redirect()->to(site_url('C_P2TL/DataPemakaian'))->with('error', 'File upload tidak valid.');
+        }
+
+        $extension = strtolower((string) $file->getClientExtension());
+        if (! in_array($extension, ['xls', 'xlsx'], true)) {
+            return redirect()->to(site_url('C_P2TL/DataPemakaian'))->with('error', 'Format file harus .xls atau .xlsx.');
+        }
+
+        $tempName = $file->getRandomName();
+        $targetPath = WRITEPATH . 'uploads/' . $tempName;
+
+        try {
+            $file->move(WRITEPATH . 'uploads', $tempName);
+            $sheet = IOFactory::load($targetPath)->getActiveSheet();
+            $rows = $sheet->toArray(null, true, true, false);
+
+            $payload = [];
+            $username = (string) (session('username') ?? 'system');
+            foreach ($rows as $i => $r) {
+                if ($i < 8) {
+                    continue;
+                }
+
+                $agenda = trim((string) ($r[1] ?? ''));
+                if ($agenda === '') {
+                    continue;
+                }
+
+                $kwhRaw = $this->toNumber($r[11] ?? null);
+                $gol = trim((string) ($r[7] ?? ''));
+                if ($gol === 'P4' && $kwhRaw <= 0) {
+                    continue;
+                }
+
+                $nomorRegister = trim((string) ($r[30] ?? ''));
+                $payload[] = [
+                    'no_agenda' => $agenda,
+                    'idpel' => trim((string) ($r[3] ?? '')),
+                    'nama' => trim((string) ($r[4] ?? '')),
+                    'gol' => $gol,
+                    'alamat' => trim((string) ($r[8] ?? '')),
+                    'daya' => $this->toNumber($r[10] ?? null),
+                    'kwh' => $kwhRaw,
+                    'tagihan_beban' => $this->toNumber($r[12] ?? null),
+                    'tagihan_kwh' => $this->toNumber($r[13] ?? null),
+                    'tagihan_ts' => $this->toNumber($r[15] ?? null),
+                    'materai' => $this->toNumber($r[16] ?? null),
+                    'segel' => $this->toNumber($r[19] ?? null),
+                    'materia' => $this->toNumber($r[20] ?? null),
+                    'rpppj' => $this->toNumber($r[22] ?? null),
+                    'rpujl' => $this->toNumber($r[23] ?? null),
+                    'rpppn' => $this->toNumber($r[24] ?? null),
+                    'rupiah_total' => $this->toNumber($r[25] ?? null),
+                    'rupiah_tunai' => $this->toNumber($r[27] ?? null),
+                    'rupiah_angsuran' => $this->toNumber($r[28] ?? null),
+                    'tanggal_register' => $this->normalizeDateCell($r[29] ?? null),
+                    'nomor_register' => $nomorRegister,
+                    'tanggal_sph' => $this->normalizeDateCell($r[31] ?? null),
+                    'nomor_sph' => trim((string) ($r[33] ?? '')),
+                    'unit_id' => (int) substr($nomorRegister, 0, 5),
+                    'upload_by' => $username,
+                    'upload_date' => date('Y-m-d H:i:s'),
+                ];
+            }
+
+            $this->p2tlModel->upsertP2TLByAgenda($payload);
+        } catch (Throwable $e) {
+            log_message('error', 'P2TL_IMPORT_DATA_FAILED: {message}', ['message' => $e->getMessage()]);
+            return redirect()->to(site_url('C_P2TL/DataPemakaian'))->with('error', 'Import data P2TL gagal diproses.');
+        } finally {
+            if (is_file($targetPath)) {
+                @unlink($targetPath);
+            }
+        }
+
+        return redirect()->to(site_url('C_P2TL/DataPemakaian'))->with('success', 'Data P2TL berhasil diimport.');
+    }
+
+    public function dataP2TL(): string
+    {
+        $isAdmin = (int) (session('group_id') ?? 0) === 1;
+        $userUnitId = session('unit_id') !== null ? (int) session('unit_id') : null;
+        $years = $this->p2tlModel->getAvailableAnalisaYears($isAdmin, $userUnitId);
+        $currentYear = $years[0] ?? (int) date('Y');
+
+        return view('p2tl/data', [
+            'title' => 'Data Pemakaian Analisa',
+            'pageHeading' => 'Data Pemakaian Analisa',
+            'units' => $this->p2tlModel->getUnits(),
+            'currentYear' => $currentYear,
+            'years' => $years,
+        ]);
+    }
+
+    public function DataPemakaian(): string
+    {
+        return $this->dataP2TL();
+    }
+
+    public function ajaxDataPemakaian(): ResponseInterface
+    {
+        $draw = (int) ($this->request->getPost('draw') ?? 0);
+        $start = max(0, (int) ($this->request->getPost('start') ?? 0));
+        $length = (int) ($this->request->getPost('length') ?? 10);
+        if ($length < 1) {
+            $length = 10;
+        }
+
+        $filters = [
+            'tahun' => (int) ($this->request->getPost('tahun') ?? date('Y')),
+            'unit' => (string) ($this->request->getPost('unit') ?? '*'),
+            'idpel' => (string) ($this->request->getPost('idpel') ?? ''),
+        ];
+
+        $isAdmin = (int) (session('group_id') ?? 0) === 1;
+        $userUnitId = session('unit_id') !== null ? (int) session('unit_id') : null;
+        $search = (string) ($this->request->getPost('search')['value'] ?? '');
+
+        $result = $this->p2tlModel->getDataPemakaianDatatable($filters, $start, $length, $search, $isAdmin, $userUnitId);
+
+        $data = [];
+        foreach ($result['rows'] as $row) {
+            $data[] = [
+                (string) ($row['idpel'] ?? ''),
+                (string) ($row['tarif'] ?? ''),
+                number_format((float) ($row['daya'] ?? 0), 0, ',', '.'),
+                (string) ($row['tahun'] ?? ''),
+                number_format((float) ($row['januari'] ?? 0), 0, ',', '.'),
+                number_format((float) ($row['februari'] ?? 0), 0, ',', '.'),
+                number_format((float) ($row['maret'] ?? 0), 0, ',', '.'),
+                number_format((float) ($row['april'] ?? 0), 0, ',', '.'),
+                number_format((float) ($row['mei'] ?? 0), 0, ',', '.'),
+                number_format((float) ($row['juni'] ?? 0), 0, ',', '.'),
+                number_format((float) ($row['juli'] ?? 0), 0, ',', '.'),
+                number_format((float) ($row['agustus'] ?? 0), 0, ',', '.'),
+                number_format((float) ($row['september'] ?? 0), 0, ',', '.'),
+                number_format((float) ($row['oktober'] ?? 0), 0, ',', '.'),
+                number_format((float) ($row['november'] ?? 0), 0, ',', '.'),
+                number_format((float) ($row['desember'] ?? 0), 0, ',', '.'),
+            ];
+        }
+
+        $this->response->setHeader('X-CSRF-TOKEN', csrf_hash());
+
+        return $this->response->setJSON([
+            'draw' => $draw,
+            'recordsTotal' => $result['total'],
+            'recordsFiltered' => $result['filtered'],
+            'data' => $data,
+        ]);
+    }
+
+    public function Analisa(): string
+    {
+        $isAdmin = (int) (session('group_id') ?? 0) === 1;
+        $userUnitId = session('unit_id') !== null ? (int) session('unit_id') : null;
+        $availableYears = $this->p2tlModel->getAvailableAnalisaYears($isAdmin, $userUnitId);
+        $currentYear = (int) date('Y');
+        $selectedYear = $availableYears !== [] ? (int) $availableYears[0] : $currentYear;
+
+        return view('p2tl/analisa', [
+            'title' => 'Analisa P2TL',
+            'pageHeading' => 'Analisa P2TL',
+            'units' => $this->p2tlModel->getUnits(),
+            'currentYear' => $currentYear,
+            'selectedYear' => $selectedYear,
+            'years' => $availableYears,
+            'userGroupId' => (int) (session('group_id') ?? 0),
+            'selectedUnitId' => (int) (session('unit_id') ?? 0),
+            'selectedUnitName' => (string) (session('unit_name') ?? ''),
+        ]);
+    }
+
+    public function ajaxAnalisa(): ResponseInterface
+    {
+        $draw = (int) ($this->request->getPost('draw') ?? 0);
+        $start = max(0, (int) ($this->request->getPost('start') ?? 0));
+        $length = (int) ($this->request->getPost('length') ?? 10);
+        if ($length < 1) {
+            $length = 10;
+        }
+
+        $filters = [
+            'tahun' => (int) ($this->request->getPost('tahun') ?? date('Y')),
+            'unit' => (string) ($this->request->getPost('unit') ?? '*'),
+            'idpel' => (string) ($this->request->getPost('idpel') ?? ''),
+        ];
+
+        $isAdmin = (int) (session('group_id') ?? 0) === 1;
+        $userUnitId = session('unit_id') !== null ? (int) session('unit_id') : null;
+        $search = (string) ($this->request->getPost('search')['value'] ?? '');
+
+        $result = $this->p2tlModel->getAnalisaSummaryDatatable($filters, $start, $length, $search, $isAdmin, $userUnitId);
+
+        $rows = [];
+        $no = $start + 1;
+        foreach ($result['rows'] as $row) {
+            $jamRata = $row['jam_nyala_rata'] !== null ? (float) $row['jam_nyala_rata'] : null;
+            $rataDaya = $row['rata_rata_daya'] !== null ? (float) $row['rata_rata_daya'] : null;
+
+            if ($jamRata === null) {
+                $dlpd = '-';
+            } elseif ($jamRata < 40) {
+                $dlpd = '< 40';
+            } elseif ($jamRata > 720) {
+                $dlpd = '> 720';
+            } else {
+                $dlpd = 'Normal';
+            }
+
+            $kondisi = ($jamRata !== null && $rataDaya !== null && $jamRata > $rataDaya)
+                ? 'diatas rata-rata'
+                : 'dibawah rata-rata';
+
+            $idpel = (string) ($row['idpel'] ?? '');
+
+            $rows[] = [
+                $no++,
+                $idpel,
+                (string) ($row['tarif'] ?? '-'),
+                number_format((float) ($row['daya'] ?? 0), 0, ',', '.'),
+                '-',
+                number_format((float) ($row['jam_nyala_rata'] ?? 0), 2, ',', '.'),
+                number_format((float) ($row['rata_rata_daya'] ?? 0), 2, ',', '.'),
+                $kondisi,
+                number_format((float) ($row['jam_nyala_min'] ?? 0), 2, ',', '.'),
+                number_format((float) ($row['jam_nyala_max'] ?? 0), 2, ',', '.'),
+                $dlpd,
+                (int) ($row['counting_emin'] ?? 0),
+                '<button type="button" class="btn btn-sm btn-primary" onclick="showDetail(\'' . esc($idpel) . '\')">Detail</button>',
+            ];
+        }
+
+        $this->response->setHeader('X-CSRF-TOKEN', csrf_hash());
+
+        return $this->response->setJSON([
+            'draw' => $draw,
+            'recordsTotal' => $result['total'],
+            'recordsFiltered' => $result['filtered'],
+            'data' => $rows,
+        ]);
+    }
+
+    public function getAnalisaDetailAjax(): ResponseInterface
+    {
+        $idpel = trim((string) ($this->request->getPost('idpel') ?? ''));
+        $year = (int) ($this->request->getPost('tahun') ?? date('Y'));
+        $unit = (string) ($this->request->getPost('unit') ?? '*');
+
+        if ($idpel === '') {
+            return $this->response->setJSON([
+                'has_data' => false,
+                'years' => [$year, $year - 1],
+                'rows' => [],
+            ]);
+        }
+
+        $isAdmin = (int) (session('group_id') ?? 0) === 1;
+        $userUnitId = session('unit_id') !== null ? (int) session('unit_id') : null;
+        $unitFilter = ($unit !== '' && $unit !== '*') ? (int) $unit : null;
+
+        $detail = $this->p2tlModel->getAnalisaDetailByIdpel($idpel, $year, $isAdmin, $userUnitId, $unitFilter);
+        $this->response->setHeader('X-CSRF-TOKEN', csrf_hash());
+
+        return $this->response->setJSON($detail);
+    }
+
+    public function getAnalisaGrafikAjax(): ResponseInterface
+    {
+        $idpel = trim((string) ($this->request->getPost('idpel') ?? ''));
+        $unit = (string) ($this->request->getPost('unit') ?? '*');
+
+        if ($idpel === '') {
+            return $this->response->setJSON([
+                'labels' => ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'],
+                'datasets' => [],
+            ]);
+        }
+
+        $tahunAcuan = (int) date('Y');
+        $tahunMulai = $tahunAcuan - 2;
+        $years = [];
+        for ($year = $tahunAcuan; $year >= $tahunMulai; $year--) {
+            $years[] = $year;
+        }
+
+        $isAdmin = (int) (session('group_id') ?? 0) === 1;
+        $userUnitId = session('unit_id') !== null ? (int) session('unit_id') : null;
+        $unitFilter = ($unit !== '' && $unit !== '*') ? (int) $unit : null;
+
+        $chartSeries = $this->p2tlModel->getAnalisaGrafikByIdpelRange($idpel, $tahunAcuan, $tahunMulai, $isAdmin, $userUnitId, $unitFilter);
+        $colors = ['#1d4ed8', '#0891b2', '#059669', '#ea580c'];
+        $datasets = [];
+
+        foreach ($years as $index => $year) {
+            $color = $colors[$index % count($colors)];
+            $datasets[] = [
+                'label' => 'Jam Nyala ' . $year,
+                'data' => array_values($chartSeries[$year] ?? array_fill(0, 12, null)),
+                'borderColor' => $color,
+                'backgroundColor' => $color,
+                'fill' => false,
+                'tension' => 0.2,
+            ];
+        }
+
+        $this->response->setHeader('X-CSRF-TOKEN', csrf_hash());
+        return $this->response->setJSON([
+            'labels' => ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'],
+            'datasets' => $datasets,
+        ]);
+    }
+
+    public function target(): string
+    {
+        return view('p2tl/target', [
+            'title' => 'Target P2TL',
+            'pageHeading' => 'Target P2TL',
+            'units' => $this->p2tlModel->getUnits(),
+            'currentYear' => (int) date('Y'),
+        ]);
+    }
+
+    public function ajaxTarget(): ResponseInterface
+    {
+        $year = (int) ($this->request->getPost('tahun') ?? date('Y'));
+        $rows = $this->p2tlModel->getTargetByYear($year);
+
+        $data = [];
+        foreach ($rows as $row) {
+            $targetTahunan = (float) ($row['target_tahunan'] ?? 0);
+            $data[] = [
+                (int) ($row['unit_id'] ?? 0),
+                (string) ($row['unit_name'] ?? ''),
+                $year,
+                number_format($targetTahunan, 0, ',', '.'),
+                number_format($targetTahunan / 12, 0, ',', '.'),
+            ];
+        }
+
+        $this->response->setHeader('X-CSRF-TOKEN', csrf_hash());
+
+        return $this->response->setJSON([
+            'data' => $data,
+        ]);
+    }
+
+    public function updateTarget(): RedirectResponse
+    {
+        $year = (int) ($this->request->getPost('tahun') ?? 0);
+        if ($year < 2000 || $year > ((int) date('Y') + 5)) {
+            return redirect()->to(site_url('C_P2TL/Target'))->with('error', 'Tahun target tidak valid.');
+        }
+
+        $unitIds = $this->request->getPost('unit_id');
+        $targets = $this->request->getPost('target');
+
+        if (! is_array($unitIds) || ! is_array($targets) || count($unitIds) !== count($targets)) {
+            return redirect()->to(site_url('C_P2TL/Target'))->with('error', 'Payload target tidak valid.');
+        }
+
+        $rows = [];
+        $username = (string) (session('username') ?? 'system');
+
+        foreach ($unitIds as $idx => $unitIdRaw) {
+            $unitId = (int) $unitIdRaw;
+            if ($unitId <= 0) {
+                continue;
+            }
+
+            $targetRaw = (string) ($targets[$idx] ?? '0');
+            $normalized = str_replace(['.', ','], ['', '.'], $targetRaw);
+            $target = is_numeric($normalized) ? (float) $normalized : 0.0;
+
+            $rows[] = [
+                'unit_id' => $unitId,
+                'tahun' => $year,
+                'target_tahunan' => $target,
+                'created_by' => $username,
+                'created_date' => date('Y-m-d'),
+                'updated_by' => $username,
+                'updated_date' => date('Y-m-d'),
+            ];
+        }
+
+        try {
+            $this->p2tlModel->replaceTargetByYear($year, $rows);
+        } catch (Throwable $e) {
+            log_message('error', 'P2TL_TARGET_SAVE_FAILED: {message}', ['message' => $e->getMessage()]);
+            return redirect()->to(site_url('C_P2TL/Target'))->with('error', 'Gagal menyimpan target P2TL.');
+        }
+
+        return redirect()->to(site_url('C_P2TL/Target'))->with('success', 'Target P2TL berhasil diperbarui.');
+    }
+
+    public function ajaxTargetHarian(): ResponseInterface
+    {
+        $unitId = (int) ($this->request->getPost('unit_id') ?? 0);
+        $year = (int) ($this->request->getPost('tahun') ?? date('Y'));
+
+        if ($unitId <= 0 || $year < 2000 || $year > 2100) {
+            return $this->response->setStatusCode(400)->setJSON([
+                'data' => [],
+                'message' => 'Parameter target harian tidak valid.',
+            ]);
+        }
+
+        $rows = $this->p2tlModel->getTargetHarianByUnitYear($unitId, $year);
+        $this->response->setHeader('X-CSRF-TOKEN', csrf_hash());
+
+        return $this->response->setJSON([
+            'data' => $rows,
+        ]);
+    }
+
+    public function updateTargetHarian(): RedirectResponse
+    {
+        $unitId = (int) ($this->request->getPost('unit_id') ?? 0);
+        $year = (int) ($this->request->getPost('tahun') ?? 0);
+        $harian = $this->request->getPost('harian');
+
+        if ($unitId <= 0 || $year < 2000 || $year > 2100 || ! is_array($harian)) {
+            return redirect()->to(site_url('C_P2TL/Target'))->with('error', 'Payload target harian tidak valid.');
+        }
+
+        $payload = [];
+        for ($i = 0; $i < 12; $i++) {
+            $value = trim((string) ($harian[$i] ?? ''));
+            if ($value === '') {
+                $payload[] = null;
+                continue;
+            }
+
+            $normalized = str_replace(['.', ','], ['', '.'], $value);
+            $payload[] = is_numeric($normalized) ? (float) $normalized : null;
+        }
+
+        $username = (string) (session('username') ?? 'system');
+
+        try {
+            $this->p2tlModel->replaceTargetHarianByUnitYear($unitId, $year, $payload, $username);
+        } catch (Throwable $e) {
+            log_message('error', 'P2TL_TARGET_HARIAN_SAVE_FAILED: {message}', ['message' => $e->getMessage()]);
+            return redirect()->to(site_url('C_P2TL/Target'))->with('error', 'Gagal menyimpan target harian: ' . $e->getMessage());
+        }
+
+        return redirect()->to(site_url('C_P2TL/Target'))->with('success', 'Target harian berhasil diperbarui.');
+    }
+
+    public function exportAnalisaExcel(): ResponseInterface
+    {
+        ini_set('memory_limit', '1024M');
+        set_time_limit(0);
+
+        $year = (int) ($this->request->getGet('tahun') ?? date('Y'));
+        $unit = (string) ($this->request->getGet('unit') ?? '*');
+        $idpel = trim((string) ($this->request->getGet('idpel') ?? ''));
+
+        $isAdmin = (int) (session('group_id') ?? 0) === 1;
+        $userUnitId = session('unit_id') !== null ? (int) session('unit_id') : null;
+        $rows = $this->p2tlModel->getAnalisaSummaryExport($year, $unit, $idpel, $isAdmin, $userUnitId);
+
+        $headers = ['NO', 'IDPEL', 'TARIF', 'DAYA', 'JN RATA-RATA', 'RATA-RATA GOL', 'KONDISI', 'MIN', 'MAX', 'DLPD', 'COUNT EMIN'];
+        $exportRows = [];
+
+        $no = 1;
+        foreach ($rows as $row) {
+            $jamRata = $row['jam_nyala_rata'] !== null ? (float) $row['jam_nyala_rata'] : null;
+            $rata = $row['rata_rata_daya'] !== null ? (float) $row['rata_rata_daya'] : null;
+            $dlpd = $jamRata === null ? '-' : ($jamRata < 40 ? '< 40' : ($jamRata > 720 ? '> 720' : 'Normal'));
+            $kondisi = ($jamRata !== null && $rata !== null && $jamRata > $rata) ? 'diatas rata-rata' : 'dibawah rata-rata';
+
+            $exportRows[] = [
+                $no++,
+                (string) ($row['idpel'] ?? ''),
+                (string) ($row['tarif'] ?? ''),
+                (float) ($row['daya'] ?? 0),
+                (float) ($row['jam_nyala_rata'] ?? 0),
+                (float) ($row['rata_rata_daya'] ?? 0),
+                $kondisi,
+                (float) ($row['jam_nyala_min'] ?? 0),
+                (float) ($row['jam_nyala_max'] ?? 0),
+                $dlpd,
+                (int) ($row['counting_emin'] ?? 0),
+            ];
+        }
+
+        $spreadsheet = new \PhpOffice\PhpSpreadsheet\Spreadsheet();
+        $sheet = $spreadsheet->getActiveSheet();
+        $sheet->setTitle('Analisa');
+        $sheet->fromArray($headers, null, 'A1');
+
+        $rowNum = 2;
+        foreach ($exportRows as $line) {
+            $sheet->fromArray($line, null, 'A' . $rowNum);
+            $rowNum++;
+        }
+
+        $sheet->getStyle('A1:K1')->getFont()->setBold(true);
+        foreach (range('A', 'K') as $col) {
+            $sheet->getColumnDimension($col)->setAutoSize(true);
+        }
+
+        $writer = new \PhpOffice\PhpSpreadsheet\Writer\Xlsx($spreadsheet);
+        ob_start();
+        $writer->save('php://output');
+        $binary = (string) ob_get_clean();
+
+        return $this->response
+            ->setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+            ->setHeader('Content-Disposition', 'attachment; filename="Analisa_P2TL_' . date('Ymd_His') . '.xlsx"')
+            ->setHeader('Content-Length', (string) strlen($binary))
+            ->setBody($binary);
+    }
+
+    public function importAnalisa(): RedirectResponse
+    {
+        $file = $this->request->getFile('file_import');
+        $year = (int) ($this->request->getPost('tahun') ?? date('Y'));
+        $month = (int) ($this->request->getPost('bulan') ?? 0);
+        if ($month < 1 || $month > 12) {
+            return redirect()->back()->with('error', 'Bulan harus dipilih.');
+        }
+
+        $groupId = (int) (session('group_id') ?? 0);
+        $unitId = $groupId === 1 ? (int) ($this->request->getPost('unit_id') ?? 0) : (int) (session('unit_id') ?? 0);
+        if ($unitId <= 0) {
+            return redirect()->back()->with('error', 'Unit belum dipilih.');
+        }
+
+        if (! $file || ! $file->isValid() || $file->hasMoved()) {
+            return redirect()->back()->with('error', 'File upload tidak valid.');
+        }
+
+        $extension = strtolower((string) $file->getClientExtension());
+        if (! in_array($extension, ['xls', 'xlsx'], true)) {
+            return redirect()->back()->with('error', 'Format file harus .xls atau .xlsx.');
+        }
+
+        $tempName = $file->getRandomName();
+        $targetPath = WRITEPATH . 'uploads/' . $tempName;
+
+        try {
+            $file->move(WRITEPATH . 'uploads', $tempName);
+            $sheet = IOFactory::load($targetPath)->getActiveSheet();
+            $rows = $sheet->toArray(null, true, true, false);
+            $period = sprintf('%04d-%02d-01', $year, $month);
+            $username = (string) (session('username') ?? 'system');
+
+            $payload = [];
+            foreach ($rows as $i => $r) {
+                if ($i === 0) {
+                    continue;
+                }
+
+                $idpel = trim((string) ($r[0] ?? ''));
+                if ($idpel === '') {
+                    continue;
+                }
+
+                $payload[] = [
+                    'idpel' => $idpel,
+                    'tarif' => trim((string) ($r[1] ?? '')),
+                    'daya' => $this->toNumber($r[2] ?? null),
+                    'periode' => $period,
+                    'pemakaian_kwh' => $this->toNumber($r[3] ?? null),
+                    'unit_id' => $unitId,
+                    'created_by' => $username,
+                ];
+            }
+
+            $this->p2tlModel->replaceAnalisaByPeriodUnit($period, $unitId, $payload);
+        } catch (Throwable $e) {
+            log_message('error', 'P2TL_IMPORT_ANALISA_FAILED: {message}', ['message' => $e->getMessage()]);
+            return redirect()->back()->with('error', 'Import analisa gagal diproses.');
+        } finally {
+            if (is_file($targetPath)) {
+                @unlink($targetPath);
+            }
+        }
+
+        return redirect()->back()->with('success', 'Import analisa berhasil.');
+    }
+
+    public function HitRate(): string
+    {
+        return view('p2tl/hit_rate', [
+            'title' => 'Data Hitrate P2TL',
+            'pageHeading' => 'Data Hitrate P2TL',
+            'units' => $this->p2tlModel->getUnits(),
+        ]);
+    }
+
+    public function ajaxHitRate(): ResponseInterface
+    {
+        $draw = (int) ($this->request->getPost('draw') ?? 0);
+        $start = max(0, (int) ($this->request->getPost('start') ?? 0));
+        $length = (int) ($this->request->getPost('length') ?? 10);
+        if ($length < 1) {
+            $length = 10;
+        }
+
+        $filters = [
+            'unit' => (string) ($this->request->getPost('unit') ?? '*'),
+            'tanggal_awal' => (string) ($this->request->getPost('tanggal_awal') ?? ''),
+            'tanggal_akhir' => (string) ($this->request->getPost('tanggal_akhir') ?? ''),
+        ];
+
+        $isAdmin = (int) (session('group_id') ?? 0) === 1;
+        $userUnitId = session('unit_id') !== null ? (int) session('unit_id') : null;
+        $search = (string) ($this->request->getPost('search')['value'] ?? '');
+
+        $result = $this->p2tlModel->getHitRateDatatable($filters, $start, $length, $search, $isAdmin, $userUnitId);
+
+        $columnSequence = [
+            'id_p2tl', 'idpel', 'nama', 'tarif', 'daya', 'gardu', 'tiang', 'latitude', 'longitude',
+            'sesuai_merk', 'merk_meter', 'stand_lwbp', 'stand_wbp', 'stand_kvarh', 'kode_pesan',
+            'update_status', 'peruntukan', 'catatan', 'pemutusan', 'kwh_ts', 'waktu_periksa', 'regu',
+            'sumber', 'dlpd', 'sub_dlpd', 'material_kwh', 'jenislayanan', 'jenispengukuran', 'nomor_meter',
+            'tegangan_meter', 'arus_meter', 'konstanta_meter', 'waktu_meter', 'material_mcb', 'material_box',
+            'tegangan_r_n', 'tegangan_s_n', 'tegangan_t_n', 'tegangan_r_s', 'tegangan_s_t', 'tegangan_t_r',
+            'beban_primer_r', 'beban_primer_s', 'beban_primer_t', 'beban_sekunder_r', 'beban_sekunder_s',
+            'beban_sekunder_t', 'cos_beban_r', 'cos_beban_s', 'cos_beban_t', 'deviasi', 'arus_ct_primer_r',
+            'arus_ct_primer_s', 'arus_ct_primer_t', 'arus_ct_sekunder_r', 'arus_ct_sekunder_s',
+            'arus_ct_sekunder_t', 'rupiah_ts', 'rupiah_kwh', 'unit_ulp', 'status_kwh', 'nomor_ba',
+            'material_ctpt', 'ganti_material', 'durasi_periksa', 'trafo_arus_kwh', 'trafo_tegangan_kwh',
+            'faktor_kali_kwh', 'fx_kwh', 'fx_kvarh', 'fx_primer', 'fx_sekunder', 'kva', 'n_kwh', 'n_kvarh',
+            't_kwh', 't_kvarh', 'c_kwh', 'c_kvarh', 'irt_primer', 'irt_sekunder', 'cos_irt', 'kwh_p1',
+            'kvarh_p1', 'kw_primer', 'faktor_kali_kwh_r', 'deviasi_ct_r', 'deviasi_ct_s', 'deviasi_ct_t',
+            'irt_primer_ct', 'irt_sekunder_ct', 'faktor_kali_kwh_irt', 'deviasi_ct', 'tahun_mtr_blm',
+            'nomor_mtr_blm', 'kondisi_mtr_blm', 'tahun_mtr_sdh', 'nomor_mtr_sdh', 'kondisi_mtr_sdh',
+            'tahun_mon_blm', 'nomor_mon_blm', 'kondisi_mon_blm', 'tahun_mon_sdh', 'nomor_mon_sdh',
+            'kondisi_mon_sdh', 'tahun_ct_blm', 'nomor_ct_blm', 'kondisi_ct_blm', 'tahun_ct_sdh',
+            'nomor_ct_sdh', 'kondisi_ct_sdh', 'tahun_vt_blm', 'nomor_vt_blm', 'kondisi_vt_blm',
+            'tahun_vt_sdh', 'nomor_vt_sdh', 'kondisi_vt_sdh', 'tahun_reley_blm', 'nomor_reley_blm',
+            'kondisi_reley_blm', 'tahun_reley_sdh', 'nomor_reley_sdh', 'kondisi_reley_sdh',
+            'tahun_pembatas_blm', 'nomor_pembatas_blm', 'kondisi_pembatas_blm', 'tahun_pembatas_sdh',
+            'nomor_pembatas_sdh', 'kondisi_pembatas_sdh', 'tahun_boxapp_blm', 'nomor_boxapp_blm',
+            'kondisi_boxapp_blm', 'tahun_boxapp_sdh', 'nomor_boxapp_sdh', 'kondisi_boxapp_sdh',
+            'tahun_platapp_blm', 'nomor_platapp_blm', 'kondisi_platapp_blm', 'tahun_platapp_sdh',
+            'nomor_platapp_sdh', 'kondisi_platapp_sdh', 'tahun_boxamr_blm', 'nomor_boxamr_blm',
+            'kondisi_boxamr_blm', 'tahun_boxamr_sdh', 'nomor_boxamr_sdh', 'kondisi_boxamr_sdh',
+            'unit_up3', 'unit_uid', 'nik_pelanggan', 'msisdn_pelanggan', 'ts_ap2t', 'no_agenda',
+            'tanggal_sph', 'tindaklanjut_pemeriksaan', 'username', 'nama_petugas',
+        ];
+
+        $readValue = static function (array $row, string $field): string {
+            if ($field === 'id_p2tl') {
+                foreach (['id_p2tl', 'id_p2_tl', 'ID_P2TL', 'ID_P2_TL'] as $candidate) {
+                    if (array_key_exists($candidate, $row)) {
+                        return (string) ($row[$candidate] ?? '');
+                    }
+                }
+            }
+
+            if (array_key_exists($field, $row)) {
+                return (string) ($row[$field] ?? '');
+            }
+
+            $lower = strtolower($field);
+            if (array_key_exists($lower, $row)) {
+                return (string) ($row[$lower] ?? '');
+            }
+
+            $upper = strtoupper($field);
+            if (array_key_exists($upper, $row)) {
+                return (string) ($row[$upper] ?? '');
+            }
+
+            return '';
+        };
+
+        $rows = [];
+        foreach ($result['rows'] as $row) {
+            $line = [];
+            foreach ($columnSequence as $field) {
+                $line[] = $readValue($row, $field);
+            }
+            $rows[] = $line;
+        }
+
+        $this->response->setHeader('X-CSRF-TOKEN', csrf_hash());
+        return $this->response->setJSON([
+            'draw' => $draw,
+            'recordsTotal' => $result['total'],
+            'recordsFiltered' => $result['filtered'],
+            'data' => $rows,
+        ]);
+    }
+
+    public function importHitRate(): RedirectResponse
+    {
+        $file = $this->request->getFile('file_import');
+        if (! $file || ! $file->isValid() || $file->hasMoved()) {
+            return redirect()->to(site_url('C_P2TL/HitRate'))->with('error', 'File upload tidak valid.');
+        }
+
+        $extension = strtolower((string) $file->getClientExtension());
+        if (! in_array($extension, ['xls', 'xlsx', 'csv'], true)) {
+            return redirect()->to(site_url('C_P2TL/HitRate'))->with('error', 'Format file harus .xls/.xlsx/.csv.');
+        }
+
+        $tempName = $file->getRandomName();
+        $targetPath = WRITEPATH . 'uploads/' . $tempName;
+
+        try {
+            $file->move(WRITEPATH . 'uploads', $tempName);
+
+            if ($extension === 'csv') {
+                $reader = new \PhpOffice\PhpSpreadsheet\Reader\Csv();
+                $reader->setReadDataOnly(true);
+                $sheet = $reader->load($targetPath)->getActiveSheet();
+            } else {
+                $sheet = IOFactory::load($targetPath)->getActiveSheet();
+            }
+
+            $rawRows = $sheet->toArray(null, true, true, false);
+            if ($rawRows === []) {
+                return redirect()->to(site_url('C_P2TL/HitRate'))->with('error', 'File tidak berisi data.');
+            }
+
+            $headers = array_map(static fn($h) => strtolower(trim((string) $h)), (array) ($rawRows[0] ?? []));
+            $fieldMap = [];
+            foreach ($headers as $idx => $header) {
+                if ($header === '') {
+                    continue;
+                }
+                $fieldMap[$idx] = str_replace(' ', '_', $header);
+            }
+
+            $allowed = $this->db->getFieldNames('trn_hitrate');
+            $allowedFlip = array_fill_keys($allowed, true);
+            $username = (string) (session('username') ?? 'system');
+            $payload = [];
+
+            for ($i = 1; $i < count($rawRows); $i++) {
+                $r = (array) $rawRows[$i];
+                if (implode('', array_map(static fn($v) => trim((string) $v), $r)) === '') {
+                    continue;
+                }
+
+                $row = [];
+                foreach ($fieldMap as $idx => $field) {
+                    if (! isset($allowedFlip[$field])) {
+                        continue;
+                    }
+                    $val = $r[$idx] ?? null;
+                    if (in_array($field, ['daya', 'kwh_ts', 'rupiah_ts', 'rupiah_kwh'], true)) {
+                        $val = $this->toNumber($val);
+                    }
+                    $row[$field] = $val;
+                }
+
+                if ($row === []) {
+                    continue;
+                }
+
+                if (isset($allowedFlip['created_by']) && ! isset($row['created_by'])) {
+                    $row['created_by'] = $username;
+                }
+
+                $payload[] = $row;
+            }
+
+            $this->p2tlModel->insertHitrateBatch($payload);
+        } catch (Throwable $e) {
+            log_message('error', 'P2TL_IMPORT_HITRATE_FAILED: {message}', ['message' => $e->getMessage()]);
+            return redirect()->to(site_url('C_P2TL/HitRate'))->with('error', 'Import hitrate gagal diproses.');
+        } finally {
+            if (is_file($targetPath)) {
+                @unlink($targetPath);
+            }
+        }
+
+        return redirect()->to(site_url('C_P2TL/HitRate'))->with('success', 'Data hitrate berhasil diimport.');
+    }
+
+    public function TargetOperasi(): string
+    {
+        return view('p2tl/target_operasi', [
+            'title' => 'Target Operasi P2TL',
+            'pageHeading' => 'Target Operasi P2TL',
+            'units' => $this->p2tlModel->getUnits(),
+            'userGroupId' => (int) (session('group_id') ?? 0),
+            'selectedUnitId' => (int) (session('unit_id') ?? 0),
+            'selectedUnitName' => (string) (session('unit_name') ?? ''),
+        ]);
+    }
+
+    public function dataTargetOperasi(): ResponseInterface
+    {
+        $draw = (int) ($this->request->getPost('draw') ?? 0);
+        $start = max(0, (int) ($this->request->getPost('start') ?? 0));
+        $length = (int) ($this->request->getPost('length') ?? 10);
+        if ($length < 1) {
+            $length = 10;
+        }
+
+        $filters = ['unit' => (string) ($this->request->getPost('unit') ?? '*')];
+        $isAdmin = (int) (session('group_id') ?? 0) === 1;
+        $userUnitId = session('unit_id') !== null ? (int) session('unit_id') : null;
+        $search = (string) ($this->request->getPost('search')['value'] ?? '');
+
+        $result = $this->p2tlModel->getTargetOperasiDatatable($filters, $start, $length, $search, $isAdmin, $userUnitId);
+        $rows = [];
+        foreach ($result['rows'] as $row) {
+            $rows[] = [
+                (string) ($row['idpel'] ?? ''),
+                (string) ($row['nama'] ?? ''),
+                (string) ($row['tarif'] ?? ''),
+                number_format((float) ($row['daya'] ?? 0), 0, ',', '.'),
+                (string) ($row['gardu'] ?? ''),
+                (string) ($row['tiang'] ?? ''),
+                (string) ($row['unit_id'] ?? ''),
+                number_format((float) ($row['jam_nyala'] ?? 0), 2, ',', '.'),
+                (string) ($row['jenis_to'] ?? ''),
+                '<a class="btn btn-sm btn-primary" target="_blank" href="https://maps.google.com/?q=' . urlencode((string) ($row['latitude'] ?? '')) . ',' . urlencode((string) ($row['longitude'] ?? '')) . '">MAP</a>',
+                (string) ($row['subdlpd'] ?? ''),
+            ];
+        }
+
+        $this->response->setHeader('X-CSRF-TOKEN', csrf_hash());
+        return $this->response->setJSON([
+            'draw' => $draw,
+            'recordsTotal' => $result['total'],
+            'recordsFiltered' => $result['filtered'],
+            'data' => $rows,
+        ]);
+    }
+
+    public function importTargetOperasi(): RedirectResponse
+    {
+        $file = $this->request->getFile('file_import');
+        if (! $file || ! $file->isValid() || $file->hasMoved()) {
+            return redirect()->to(site_url('C_P2TL/TargetOperasi'))->with('error', 'File upload tidak valid.');
+        }
+
+        $extension = strtolower((string) $file->getClientExtension());
+        if (! in_array($extension, ['xls', 'xlsx'], true)) {
+            return redirect()->to(site_url('C_P2TL/TargetOperasi'))->with('error', 'Format file harus .xls atau .xlsx.');
+        }
+
+        $tempName = $file->getRandomName();
+        $targetPath = WRITEPATH . 'uploads/' . $tempName;
+
+        try {
+            $file->move(WRITEPATH . 'uploads', $tempName);
+            $sheet = IOFactory::load($targetPath)->getActiveSheet();
+            $raw = $sheet->toArray(null, true, true, false);
+            $unitId = (int) (session('unit_id') ?? 0);
+            $username = (string) (session('username') ?? 'system');
+            $rows = [];
+
+            foreach ($raw as $i => $r) {
+                if ($i === 0) {
+                    continue;
+                }
+                $idpel = trim((string) ($r[1] ?? ''));
+                if ($idpel === '') {
+                    continue;
+                }
+
+                $rows[] = [
+                    'idpel' => $idpel,
+                    'nama' => trim((string) ($r[2] ?? '')),
+                    'tarif' => trim((string) ($r[3] ?? '')),
+                    'daya' => $this->toNumber($r[4] ?? null),
+                    'gardu' => trim((string) ($r[5] ?? '')),
+                    'tiang' => trim((string) ($r[6] ?? '')),
+                    'jam_nyala' => $this->toNumber($r[7] ?? null),
+                    'jenis_to' => trim((string) ($r[8] ?? '')),
+                    'latitude' => trim((string) ($r[9] ?? '')),
+                    'longitude' => trim((string) ($r[10] ?? '')),
+                    'subdlpd' => trim((string) ($r[11] ?? '')),
+                    'unit_id' => $unitId,
+                    'created_by' => $username,
+                ];
+            }
+
+            $this->p2tlModel->insertTargetOperasiBatch($rows);
+        } catch (Throwable $e) {
+            log_message('error', 'P2TL_IMPORT_TARGET_OPERASI_FAILED: {message}', ['message' => $e->getMessage()]);
+            return redirect()->to(site_url('C_P2TL/TargetOperasi'))->with('error', 'Import target operasi gagal diproses.');
+        } finally {
+            if (is_file($targetPath)) {
+                @unlink($targetPath);
+            }
+        }
+
+        return redirect()->to(site_url('C_P2TL/TargetOperasi'))->with('success', 'Data target operasi berhasil diimport.');
+    }
+
+    /**
+     * @return array{jenis_akumulasi: string, data: array<int, array<string, mixed>>}
+     */
+    private function resolveAkumulasiPayload(): array
+    {
+        $jenis = strtoupper((string) ($this->request->getVar('jenis_akumulasi') ?? 'TAHUNAN'));
+        $golongan = (string) ($this->request->getVar('golongan') ?? '*');
+        $sortir = (string) ($this->request->getVar('sortir') ?? '1');
+
+        if ($jenis === 'BULANAN') {
+            $monthInput = (string) ($this->request->getVar('bulan') ?? date('Y-m'));
+            $monthDate = preg_match('/^\d{4}-\d{2}$/', $monthInput) === 1 ? $monthInput . '-01' : date('Y-m-01');
+            return [
+                'jenis_akumulasi' => $jenis,
+                'data' => $this->p2tlModel->getAkumulasiBulanan(
+                    (int) date('Y', strtotime($monthDate)),
+                    (int) date('n', strtotime($monthDate)),
+                    $golongan,
+                    $sortir
+                ),
+            ];
+        }
+
+        if ($jenis === 'HARIAN') {
+            $dateInput = (string) ($this->request->getVar('tanggal') ?? date('Y-m-d'));
+            $date = preg_match('/^\d{4}-\d{2}-\d{2}$/', $dateInput) === 1 ? $dateInput : date('Y-m-d');
+            return [
+                'jenis_akumulasi' => $jenis,
+                'data' => $this->p2tlModel->getAkumulasiHarian($date, $sortir),
+            ];
+        }
+
+        $startInput = (string) ($this->request->getVar('bulan_awal') ?? date('Y-01-01'));
+        $endInput = (string) ($this->request->getVar('bulan_akhir') ?? date('Y-m-d'));
+
+        $startDate = preg_match('/^\d{4}-\d{2}(-\d{2})?$/', $startInput) === 1
+            ? (strlen($startInput) === 7 ? $startInput . '-01' : $startInput)
+            : date('Y-01-01');
+
+        $endDate = preg_match('/^\d{4}-\d{2}(-\d{2})?$/', $endInput) === 1
+            ? (strlen($endInput) === 7 ? date('Y-m-t', strtotime($endInput . '-01')) : $endInput)
+            : date('Y-m-d');
+
+        return [
+            'jenis_akumulasi' => 'TAHUNAN',
+            'data' => $this->p2tlModel->getAkumulasiTahunan($startDate, $endDate, $golongan, $sortir),
+        ];
+    }
+
+    private function toNumber(mixed $value): float
+    {
+        if (is_string($value)) {
+            $normalized = trim($value);
+            if ($normalized === '') {
+                return 0.0;
+            }
+
+            $normalized = str_replace([' ', ','], ['', '.'], $normalized);
+            $value = is_numeric($normalized) ? (float) $normalized : 0.0;
+        }
+
+        return is_numeric($value) ? (float) $value : 0.0;
+    }
+
+    private function normalizeDateCell(mixed $value): ?string
+    {
+        if ($value === null) {
+            return null;
+        }
+
+        $raw = trim((string) $value);
+        if ($raw === '') {
+            return null;
+        }
+
+        if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $raw) === 1) {
+            return $raw;
+        }
+
+        $ts = strtotime(str_replace('/', '-', $raw));
+        if ($ts === false) {
+            return null;
+        }
+
+        return date('Y-m-d', $ts);
+    }
+}

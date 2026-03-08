@@ -1,0 +1,393 @@
+<?php
+
+namespace App\Models;
+
+use CodeIgniter\Database\BaseBuilder;
+use CodeIgniter\Model;
+use RuntimeException;
+
+class TulModel extends Model
+{
+    protected $table = 'trn_tul';
+    protected $primaryKey = 'id';
+    protected $returnType = 'array';
+    protected $allowedFields = [
+        'unit_id',
+        'periode',
+        'tarif',
+        'pelanggan',
+        'daya',
+        'pemakaian_jumlah',
+        'pemakaian_lwbp',
+        'pemakaian_wbp',
+        'pemakaian_kelebihan_kvarh',
+        'biaya_beban',
+        'biaya_kwh',
+        'biaya_kelebihan_kvarh',
+        'biaya_ttlb',
+        'jumlah',
+        'created_by',
+        'created_at',
+        'updated_at',
+    ];
+
+    /**
+     * @return list<array<string, mixed>>
+     */
+    public function getUnits(): array
+    {
+        return $this->db->table('mst_unit')
+            ->select('unit_id, unit_name, urutan')
+            ->where('is_active', 1)
+            ->orderBy('urutan', 'ASC')
+            ->orderBy('unit_name', 'ASC')
+            ->get()
+            ->getResultArray();
+    }
+
+    /**
+     * @return list<array<string, mixed>>
+     */
+    public function getDatatableRows(array $filters, int $start, int $length, ?string $search, ?array $order, bool $isAdmin, ?int $userUnitId): array
+    {
+        $builder = $this->buildDatatableBase($filters, $search, $isAdmin, $userUnitId);
+
+        // Keep listing stable by DB primary key only, regardless of DataTables requested sort.
+        $builder->orderBy('t.id', 'ASC');
+
+        if ($length > 0) {
+            $builder->limit($length, $start);
+        }
+
+        return $builder->get()->getResultArray();
+    }
+
+    public function countFiltered(array $filters, ?string $search, bool $isAdmin, ?int $userUnitId): int
+    {
+        return $this->buildDatatableBase($filters, $search, $isAdmin, $userUnitId)->countAllResults();
+    }
+
+    public function countTotalByScope(array $filters, bool $isAdmin, ?int $userUnitId): int
+    {
+        return $this->buildDatatableBase($filters, null, $isAdmin, $userUnitId)->countAllResults();
+    }
+
+    /**
+     * @return list<array<string, mixed>>
+     */
+    public function getSummaryPerUnit(?string $period, bool $isAdmin, ?int $userUnitId): array
+    {
+        $builder = $this->db->table('mst_unit u')
+            ->select('u.unit_id, u.unit_name')
+            ->select('COALESCE(SUM(t.pelanggan), 0) AS total_pelanggan', false)
+            ->select('COALESCE(SUM(t.daya), 0) AS total_daya', false)
+            ->select('COALESCE(SUM(t.pemakaian_jumlah), 0) AS total_pemakaian_jumlah', false)
+            ->select('COALESCE(SUM(t.biaya_beban), 0) AS total_biaya_beban', false)
+            ->select('COALESCE(SUM(t.biaya_kwh), 0) AS total_biaya_kwh', false)
+            ->select('COALESCE(SUM(t.jumlah), 0) AS total_jumlah', false)
+            ->where('u.is_active', 1)
+            ->orderBy('u.urutan', 'ASC')
+            ->orderBy('u.unit_name', 'ASC');
+
+        $joinCondition = 'u.unit_id = t.unit_id';
+        $periodDate = $this->normalizePeriodDate($period);
+        if ($periodDate !== null) {
+            $joinCondition .= ' AND t.periode = ' . $this->db->escape($periodDate);
+        }
+
+        $builder->join('trn_tul t', $joinCondition, 'left');
+
+        if (! $isAdmin && $userUnitId !== null) {
+            $builder->where('u.unit_id', $userUnitId);
+        }
+
+        $builder->groupBy('u.unit_id, u.unit_name');
+
+        return $builder->get()->getResultArray();
+    }
+
+    /**
+     * @return list<array<string, mixed>>
+     */
+    public function getGolonganTarifList(): array
+    {
+        $sql = "SELECT DISTINCT SUBSTRING_INDEX(tarif, ' / ', 1) AS gol_tarif
+                FROM trn_tul
+                WHERE tarif LIKE '%/%'
+                ORDER BY gol_tarif ASC";
+
+        return $this->db->query($sql)->getResultArray();
+    }
+
+    /**
+     * @return list<array<string, mixed>>
+     */
+    public function getDashboardData(int $year, ?int $unitId, ?string $golTarif, bool $isAdmin, ?int $userUnitId): array
+    {
+        $sql = "SELECT
+                    u.unit_id,
+                    u.unit_name,
+                    u.urutan,
+                    t.periode,
+                    SUBSTRING_INDEX(t.tarif, ' / ', 1) AS gol_tarif,
+                    SUBSTRING_INDEX(t.tarif, ' / ', -1) AS daya,
+                    SUM(COALESCE(t.pemakaian_jumlah, 0)) AS pemakaian_jumlah
+                FROM trn_tul t
+                LEFT JOIN mst_unit u ON t.unit_id = u.unit_id
+                WHERE t.tarif LIKE '%/%'
+                  AND YEAR(t.periode) = ?";
+
+        $binds = [$year];
+
+        if ($unitId !== null) {
+            $sql .= ' AND t.unit_id = ?';
+            $binds[] = $unitId;
+        }
+
+        if ($golTarif !== null && trim($golTarif) !== '') {
+            $sql .= " AND SUBSTRING_INDEX(t.tarif, ' / ', 1) = ?";
+            $binds[] = trim($golTarif);
+        }
+
+        if (! $isAdmin && $userUnitId !== null) {
+            $sql .= ' AND t.unit_id = ?';
+            $binds[] = $userUnitId;
+        }
+
+        $sql .= " GROUP BY
+                    u.unit_id,
+                    u.unit_name,
+                    u.urutan,
+                    t.periode,
+                    SUBSTRING_INDEX(t.tarif, ' / ', 1),
+                    SUBSTRING_INDEX(t.tarif, ' / ', -1)
+                  ORDER BY
+                    u.urutan ASC,
+                    u.unit_name ASC,
+                    gol_tarif ASC,
+                    daya ASC,
+                    t.periode ASC";
+
+        return $this->db->query($sql, $binds)->getResultArray();
+    }
+
+    /**
+     * @return list<array<string, mixed>>
+     */
+    public function getChartData(int $year, ?int $unitId, ?string $golTarif, bool $isAdmin, ?int $userUnitId): array
+    {
+        $builder = $this->db->table('trn_tul')
+            ->select('MONTH(periode) AS month, SUM(COALESCE(pemakaian_jumlah, 0)) AS total', false)
+            ->where('YEAR(periode)', $year, false)
+            ->where("tarif LIKE '%/%'", null, false)
+            ->groupBy('MONTH(periode)')
+            ->orderBy('month', 'ASC');
+
+        if ($unitId !== null) {
+            $builder->where('unit_id', $unitId);
+        }
+
+        if ($golTarif !== null && trim($golTarif) !== '') {
+            $builder->where("SUBSTRING_INDEX(tarif, ' / ', 1)", trim($golTarif), false);
+        }
+
+        if (! $isAdmin && $userUnitId !== null) {
+            $builder->where('unit_id', $userUnitId);
+        }
+
+        return $builder->get()->getResultArray();
+    }
+
+    /**
+     * @return list<array<string, mixed>>
+     */
+    public function getPieDataByPeriod(string $period, string $periodType, ?int $unitId, bool $isAdmin, ?int $userUnitId): array
+    {
+        $sql = "SELECT
+                    kt.kategori_tegangan AS kategori,
+                    SUM(COALESCE(t.pemakaian_jumlah, 0)) AS total_pemakaian
+                FROM trn_tul t
+                JOIN trn_kategori_tegangan kt ON t.tarif = kt.tarif
+                WHERE 1 = 1";
+        $binds = [];
+
+        if ($periodType === 'monthly') {
+            $sql .= " AND DATE_FORMAT(t.periode, '%Y-%m') = ?";
+            $binds[] = $period;
+        } else {
+            $sql .= ' AND YEAR(t.periode) = ?';
+            $binds[] = (int) $period;
+        }
+
+        if ($unitId !== null) {
+            $sql .= ' AND t.unit_id = ?';
+            $binds[] = $unitId;
+        }
+
+        if (! $isAdmin && $userUnitId !== null) {
+            $sql .= ' AND t.unit_id = ?';
+            $binds[] = $userUnitId;
+        }
+
+        $sql .= ' GROUP BY kt.kategori_tegangan';
+
+        return $this->db->query($sql, $binds)->getResultArray();
+    }
+
+    /**
+     * @return list<array<string, mixed>>
+     */
+    public function getKwhJualComparison(string $periodLeft, string $periodRight, string $periodType, ?int $unitId, bool $isAdmin, ?int $userUnitId): array
+    {
+        $periodExpression = $periodType === 'monthly'
+            ? "DATE_FORMAT(t.periode, '%Y-%m')"
+            : 'YEAR(t.periode)';
+
+        $sql = "SELECT
+                    kategori,
+                    SUM(CASE WHEN period_key = ? THEN total_pemakaian ELSE 0 END) AS kwh_left,
+                    SUM(CASE WHEN period_key = ? THEN total_pemakaian ELSE 0 END) AS kwh_right
+                FROM (
+                    SELECT
+                        {$periodExpression} AS period_key,
+                        kt.kategori_tegangan AS kategori,
+                        COALESCE(t.pemakaian_jumlah, 0) AS total_pemakaian
+                    FROM trn_tul t
+                    JOIN trn_kategori_tegangan kt ON t.tarif = kt.tarif
+                    WHERE " . ($periodType === 'monthly' ? "DATE_FORMAT(t.periode, '%Y-%m') IN (?, ?)" : 'YEAR(t.periode) IN (?, ?)');
+
+        $binds = [
+            $periodType === 'monthly' ? $periodLeft : (int) $periodLeft,
+            $periodType === 'monthly' ? $periodRight : (int) $periodRight,
+            $periodType === 'monthly' ? $periodLeft : (int) $periodLeft,
+            $periodType === 'monthly' ? $periodRight : (int) $periodRight,
+        ];
+
+        if ($unitId !== null) {
+            $sql .= ' AND t.unit_id = ?';
+            $binds[] = $unitId;
+        }
+
+        if (! $isAdmin && $userUnitId !== null) {
+            $sql .= ' AND t.unit_id = ?';
+            $binds[] = $userUnitId;
+        }
+
+        $sql .= ') subquery
+                GROUP BY kategori
+                ORDER BY CASE kategori
+                    WHEN \'TT\' THEN 1
+                    WHEN \'TM\' THEN 2
+                    WHEN \'TR\' THEN 3
+                    ELSE 4
+                END';
+
+        return $this->db->query($sql, $binds)->getResultArray();
+    }
+
+    public function replacePeriodUnitData(string $periodDate, int $unitId, array $rows): void
+    {
+        $this->db->transStart();
+
+        $this->db->table('trn_tul')
+            ->where('periode', $periodDate)
+            ->where('unit_id', $unitId)
+            ->delete();
+
+        if ($rows !== []) {
+            $this->db->table('trn_tul')->insertBatch($rows, null, 200);
+        }
+
+        $this->db->transComplete();
+
+        if (! $this->db->transStatus()) {
+            throw new RuntimeException('Gagal menyimpan data TUL.');
+        }
+    }
+
+    public function findByIdScoped(int $id, bool $isAdmin, ?int $userUnitId): ?array
+    {
+        $builder = $this->db->table('trn_tul t')
+            ->select('t.*, u.unit_name')
+            ->join('mst_unit u', 'u.unit_id = t.unit_id', 'left')
+            ->where('t.id', $id);
+
+        if (! $isAdmin && $userUnitId !== null) {
+            $builder->where('t.unit_id', $userUnitId);
+        }
+
+        $row = $builder->get()->getRowArray();
+
+        return is_array($row) ? $row : null;
+    }
+
+    public function updateByIdScoped(int $id, array $payload, bool $isAdmin, ?int $userUnitId): bool
+    {
+        $builder = $this->db->table('trn_tul')->where('id', $id);
+        if (! $isAdmin && $userUnitId !== null) {
+            $builder->where('unit_id', $userUnitId);
+        }
+
+        return (bool) $builder->update($payload);
+    }
+
+    public function deleteByIdScoped(int $id, bool $isAdmin, ?int $userUnitId): bool
+    {
+        $builder = $this->db->table('trn_tul')->where('id', $id);
+        if (! $isAdmin && $userUnitId !== null) {
+            $builder->where('unit_id', $userUnitId);
+        }
+
+        return (bool) $builder->delete();
+    }
+
+    private function buildDatatableBase(array $filters, ?string $search, bool $isAdmin, ?int $userUnitId): BaseBuilder
+    {
+        $builder = $this->db->table('trn_tul t')
+            ->select('t.*, u.unit_name')
+            ->join('mst_unit u', 'u.unit_id = t.unit_id', 'left');
+
+        $periodDate = $this->normalizePeriodDate((string) ($filters['periode'] ?? ''));
+        if ($periodDate !== null) {
+            $builder->where('t.periode', $periodDate);
+        }
+
+        $unitId = isset($filters['unit_id']) && $filters['unit_id'] !== '' ? (int) $filters['unit_id'] : null;
+        if ($unitId !== null) {
+            $builder->where('t.unit_id', $unitId);
+        }
+
+        if (! $isAdmin && $userUnitId !== null) {
+            $builder->where('t.unit_id', $userUnitId);
+        }
+
+        $search = trim((string) $search);
+        if ($search !== '') {
+            $builder->groupStart()
+                ->like('t.tarif', $search)
+                ->orLike('t.created_by', $search)
+                ->orLike('u.unit_name', $search)
+                ->groupEnd();
+        }
+
+        return $builder;
+    }
+
+    private function normalizePeriodDate(?string $period): ?string
+    {
+        $value = trim((string) $period);
+        if ($value === '') {
+            return null;
+        }
+
+        if (preg_match('/^\d{4}-\d{2}$/', $value) === 1) {
+            return $value . '-01';
+        }
+
+        if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $value) === 1) {
+            return $value;
+        }
+
+        return null;
+    }
+}
