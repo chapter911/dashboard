@@ -10,6 +10,11 @@
     $faviconUrl = $branding['app_logo_url'] ?? base_url('favicon.ico');
     $primaryColor = $branding['app_primary_color'] ?? '#0a66c2';
     $primaryColorDeep = $branding['app_primary_color_deep'] ?? '#074c91';
+    $primaryHex = ltrim((string) $primaryColor, '#');
+    $primaryR = ctype_xdigit($primaryHex) && strlen($primaryHex) === 6 ? hexdec(substr($primaryHex, 0, 2)) : 10;
+    $primaryG = ctype_xdigit($primaryHex) && strlen($primaryHex) === 6 ? hexdec(substr($primaryHex, 2, 2)) : 102;
+    $primaryB = ctype_xdigit($primaryHex) && strlen($primaryHex) === 6 ? hexdec(substr($primaryHex, 4, 2)) : 194;
+    $primaryRgb = $primaryR . ', ' . $primaryG . ', ' . $primaryB;
     $pageTitle = trim((string) ($title ?? ''));
     $browserTitle = $appName . ' -' . ($pageTitle !== '' ? ' ' . $pageTitle : '');
     ?>
@@ -26,6 +31,8 @@
             --ink-soft: #4b6072;
             --brand: <?= esc($primaryColor) ?>;
             --brand-deep: <?= esc($primaryColorDeep) ?>;
+            --bs-primary: var(--brand);
+            --bs-primary-rgb: <?= esc($primaryRgb) ?>;
             --accent: #ff9f1c;
             --danger: #c62828;
             --ok: #1b8d41;

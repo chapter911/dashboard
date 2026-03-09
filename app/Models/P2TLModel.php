@@ -305,8 +305,11 @@ SQL;
         $unit = (string) ($filters['unit'] ?? '*');
         $idpel = trim((string) ($filters['idpel'] ?? ''));
 
+        $periodStart = sprintf('%04d-01-01', $year);
+        $periodEnd = sprintf('%04d-01-01', $year + 1);
+
         $unitWhere = '';
-        $binds = [$year];
+        $binds = [$periodStart, $periodEnd];
 
         if (! $isAdmin && $userUnitId !== null) {
             $unitWhere = ' AND a.unit_id = ?';
@@ -316,10 +319,13 @@ SQL;
             $binds[] = (int) $unit;
         }
 
-        $baseSql = "SELECT
+        $analisaSql = "SELECT
                 a.idpel,
                 a.tarif,
-                a.daya,
+                CASE
+                    WHEN MAX(a.daya) >= 100000 AND MOD(MAX(a.daya), 1000) = 0 THEN MAX(a.daya) / 1000
+                    ELSE MAX(a.daya)
+                END AS daya,
                 YEAR(a.periode) AS tahun,
                 SUM(CASE WHEN MONTH(a.periode) = 1 THEN a.pemakaian_kwh END) AS januari,
                 SUM(CASE WHEN MONTH(a.periode) = 2 THEN a.pemakaian_kwh END) AS februari,
@@ -334,8 +340,10 @@ SQL;
                 SUM(CASE WHEN MONTH(a.periode) = 11 THEN a.pemakaian_kwh END) AS november,
                 SUM(CASE WHEN MONTH(a.periode) = 12 THEN a.pemakaian_kwh END) AS desember
             FROM trn_p2tl_analisa a
-            WHERE YEAR(a.periode) = ?{$unitWhere}
-            GROUP BY a.idpel, a.tarif, a.daya, YEAR(a.periode)";
+            WHERE a.periode >= ? AND a.periode < ?{$unitWhere}
+            GROUP BY a.idpel, a.tarif, YEAR(a.periode)";
+
+        $baseSql = 'SELECT * FROM (' . $analisaSql . ') x';
 
         $where = '';
         $whereBinds = [];

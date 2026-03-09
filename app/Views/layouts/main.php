@@ -49,6 +49,10 @@
             --app-primary-deep: <?= esc($primaryColorDeep) ?>;
             --bs-primary: var(--app-primary);
             --app-primary-rgb: <?= esc($primaryRgb) ?>;
+            --bs-primary-rgb: var(--app-primary-rgb);
+            --bs-link-color: var(--app-primary);
+            --bs-link-hover-color: var(--app-primary-deep);
+            --bs-purple: var(--app-primary);
         }
 
         .btn-primary,
@@ -301,6 +305,97 @@
             </div>
         </div>
     </div>
+
+    <style>
+        /* Force common interactive components to follow app primary color. */
+        .form-check-input:checked,
+        .form-check-input[type='checkbox']:indeterminate,
+        .form-check-input[type='radio']:checked,
+        .form-switch .form-check-input:checked {
+            background-color: var(--app-primary) !important;
+            border-color: var(--app-primary) !important;
+        }
+
+        .form-check-input:focus,
+        .form-check-input[type='checkbox']:focus,
+        .form-check-input[type='radio']:focus,
+        .form-range:focus::-webkit-slider-thumb,
+        .form-range:focus::-moz-range-thumb {
+            border-color: var(--app-primary) !important;
+            box-shadow: 0 0 0 0.22rem rgba(var(--app-primary-rgb), 0.25) !important;
+        }
+
+        .form-check-input,
+        .form-check-input[type='checkbox'],
+        .form-check-input[type='radio'] {
+            border-color: rgba(var(--app-primary-rgb), 0.45) !important;
+        }
+
+        .select2-container--default .select2-results__option--highlighted[aria-selected],
+        .select2-container--default .select2-selection--multiple .select2-selection__choice {
+            background-color: var(--app-primary) !important;
+            border-color: var(--app-primary) !important;
+            color: #fff !important;
+        }
+
+        .select2-container--default .select2-selection__choice__remove {
+            color: #fff !important;
+        }
+
+        .bootstrap-select .dropdown-item.active,
+        .bootstrap-select .dropdown-item:active,
+        .bootstrap-select .dropdown-item:focus,
+        .bootstrap-select .dropdown-item:hover {
+            background-color: rgba(var(--app-primary-rgb), 0.16) !important;
+            color: var(--app-primary) !important;
+        }
+
+        .bootstrap-select .bs-ok-default::after {
+            border-color: var(--app-primary) !important;
+        }
+
+        #toast-container > div,
+        #toast-container > .toast {
+            border-left: 4px solid var(--app-primary) !important;
+        }
+
+        .fc .fc-button-primary,
+        .fc .fc-button-primary:not(:disabled).fc-button-active,
+        .fc .fc-button-primary:not(:disabled):active {
+            background-color: var(--app-primary) !important;
+            border-color: var(--app-primary) !important;
+        }
+
+        .fc .fc-col-header-cell-cushion,
+        .fc .fc-daygrid-day-number,
+        .fc .fc-list-day-text,
+        .fc .fc-list-day-side-text {
+            color: var(--app-primary) !important;
+        }
+
+        .jstree-default .jstree-clicked,
+        .jstree-default .jstree-hovered,
+        .jstree-default .jstree-themeicon-custom {
+            color: var(--app-primary) !important;
+        }
+
+        .jstree-default .jstree-clicked {
+            background: rgba(var(--app-primary-rgb), 0.14) !important;
+        }
+
+        .select2-container--default.select2-container--focus .select2-selection--multiple,
+        .select2-container--default.select2-container--open .select2-selection--single,
+        .select2-container--default.select2-container--open .select2-selection--multiple {
+            border-color: var(--app-primary) !important;
+            box-shadow: 0 0 0 0.22rem rgba(var(--app-primary-rgb), 0.2) !important;
+        }
+
+        .bootstrap-select > .dropdown-toggle:focus,
+        .bootstrap-select.show > .dropdown-toggle {
+            border-color: var(--app-primary) !important;
+            box-shadow: 0 0 0 0.22rem rgba(var(--app-primary-rgb), 0.2) !important;
+        }
+    </style>
 
     <script src="<?= base_url('assets/vendor/libs/jquery/jquery.js') ?>"></script>
     <script src="<?= base_url('assets/vendor/libs/popper/popper.js') ?>"></script>

@@ -17,6 +17,7 @@ class C_Master extends BaseController
     private const PELANGGAN_IMPORT_STATE_PREFIX = 'pelanggan_import_';
     private const PELANGGAN_IMPORT_CHUNK_SIZE = 1000;
     private const PELANGGAN_IMPORT_BATCH_SIZE = 500;
+    private const PELANGGAN_IMPORT_MAX_CHUNKS_PER_REQUEST = 3;
 
     public function kategoriTegangan(): string
     {
@@ -286,6 +287,9 @@ class C_Master extends BaseController
 
             $headerDetection = $this->detectImportHeader($reader, $targetPath, 20);
             if (! is_array($headerDetection)) {
+                $headerDetection = $this->detectImportHeaderBySheetScan($targetPath, 20);
+            }
+            if (! is_array($headerDetection)) {
                 return redirect()->to('/C_Master/Pelanggan')->with('error', 'Kolom wajib IDPEL dan V_BULAN_REKAP tidak ditemukan pada file.');
             }
 
@@ -334,6 +338,22 @@ class C_Master extends BaseController
         return $this->continuePelangganImportByToken($token);
     }
 
+    public function resumeImportPelangganAuto(): ResponseInterface
+    {
+        $token = trim((string) ($this->request->getPost('resume_token') ?? session('pelanggan_import_resume_token') ?? ''));
+        if ($token === '') {
+            return $this->response->setStatusCode(400)->setJSON([
+                'status' => 'error',
+                'message' => 'Token resume import tidak ditemukan.',
+            ]);
+        }
+
+        $result = $this->processPelangganImportByToken($token);
+        $this->response->setHeader('X-CSRF-TOKEN', csrf_hash());
+
+        return $this->response->setJSON($result);
+    }
+
     public function cancelResumeImportPelanggan(): RedirectResponse
     {
         $token = trim((string) ($this->request->getPost('resume_token') ?? session('pelanggan_import_resume_token') ?? ''));
@@ -349,17 +369,39 @@ class C_Master extends BaseController
 
     private function continuePelangganImportByToken(string $token): RedirectResponse
     {
+        $result = $this->processPelangganImportByToken($token);
+
+        if (($result['status'] ?? '') === 'success' || ($result['status'] ?? '') === 'in_progress') {
+            return redirect()->to('/C_Master/Pelanggan')->with('success', (string) ($result['message'] ?? ''));
+        }
+
+        return redirect()->to('/C_Master/Pelanggan')->with('error', (string) ($result['message'] ?? 'Import data induk langganan gagal diproses.'));
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function processPelangganImportByToken(string $token): array
+    {
         $state = $this->loadPelangganImportState($token);
         if (! is_array($state)) {
             session()->remove('pelanggan_import_resume_token');
-            return redirect()->to('/C_Master/Pelanggan')->with('error', 'Progress import tidak ditemukan atau sudah dibersihkan.');
+
+            return [
+                'status' => 'error',
+                'message' => 'Progress import tidak ditemukan atau sudah dibersihkan.',
+            ];
         }
 
         $filePath = (string) ($state['file_path'] ?? '');
         if ($filePath === '' || ! is_file($filePath)) {
             $this->cleanupPelangganImportState($token, false);
             session()->remove('pelanggan_import_resume_token');
-            return redirect()->to('/C_Master/Pelanggan')->with('error', 'File sumber import tidak ditemukan. Upload ulang file untuk memulai ulang.');
+
+            return [
+                'status' => 'error',
+                'message' => 'File sumber import tidak ditemukan. Upload ulang file untuk memulai ulang.',
+            ];
         }
 
         try {
@@ -369,18 +411,41 @@ class C_Master extends BaseController
             $resumeExtension = strtolower(pathinfo($filePath, PATHINFO_EXTENSION));
             $importRequirementError = $this->validateImportRequirements($resumeExtension);
             if ($importRequirementError !== null) {
-                return redirect()->to('/C_Master/Pelanggan')->with('error', $importRequirementError);
+                return [
+                    'status' => 'error',
+                    'message' => $importRequirementError,
+                ];
             }
 
             $reader = IOFactory::createReaderForFile($filePath);
             $reader->setReadDataOnly(true);
 
-            $this->runPelangganImportChunks($reader, $state);
+            $isCompleted = $this->runPelangganImportChunks($reader, $state);
+
+            if (! $isCompleted) {
+                $state['updated_at'] = date('c');
+                $this->savePelangganImportState($state);
+                session()->set('pelanggan_import_resume_token', $token);
+
+                $progressPercent = $this->calculateImportProgressPercent($state);
+                $insertedRows = (int) ($state['inserted_rows'] ?? 0);
+
+                return [
+                    'status' => 'in_progress',
+                    'message' => 'Import sedang berjalan bertahap (' . $progressPercent . '%). Data tersimpan sementara: ' . $insertedRows . ' baris. Klik "Lanjutkan Import" untuk melanjutkan.',
+                    'progress_percent' => $progressPercent,
+                    'inserted_rows' => $insertedRows,
+                ];
+            }
 
             if ((int) ($state['inserted_rows'] ?? 0) < 1) {
                 $this->cleanupPelangganImportState($token, true);
                 session()->remove('pelanggan_import_resume_token');
-                return redirect()->to('/C_Master/Pelanggan')->with('error', 'Tidak ada data valid yang berhasil diimport.');
+
+                return [
+                    'status' => 'error',
+                    'message' => 'Tidak ada data valid yang berhasil diimport.',
+                ];
             }
 
             $insertedRows = (int) ($state['inserted_rows'] ?? 0);
@@ -388,7 +453,12 @@ class C_Master extends BaseController
             $this->cleanupPelangganImportState($token, true);
             session()->remove('pelanggan_import_resume_token');
 
-            return redirect()->to('/C_Master/Pelanggan')->with('success', 'Import data induk langganan berhasil (' . $progressPercent . '%). Total baris tersimpan: ' . $insertedRows . '.');
+            return [
+                'status' => 'success',
+                'message' => 'Import data induk langganan berhasil (' . $progressPercent . '%). Total baris tersimpan: ' . $insertedRows . '.',
+                'progress_percent' => $progressPercent,
+                'inserted_rows' => $insertedRows,
+            ];
         } catch (Throwable $e) {
             $state['failed_at_row'] = (int) ($state['next_row'] ?? 2);
             $state['updated_at'] = date('c');
@@ -400,7 +470,13 @@ class C_Master extends BaseController
             $failedRow = (int) ($state['failed_at_row'] ?? 2);
             $progressPercent = $this->calculateImportProgressPercent($state);
             $friendlyMessage = $this->buildFriendlyImportErrorMessage($e->getMessage());
-            return redirect()->to('/C_Master/Pelanggan')->with('error', $friendlyMessage . ' Import gagal di sekitar baris ' . $failedRow . ' (progress ' . $progressPercent . '%). Klik tombol "Lanjutkan Import" untuk melanjutkan proses.');
+
+            return [
+                'status' => 'error',
+                'message' => $friendlyMessage . ' Import gagal di sekitar baris ' . $failedRow . ' (progress ' . $progressPercent . '%). Klik tombol "Lanjutkan Import" untuk melanjutkan proses.',
+                'progress_percent' => $progressPercent,
+                'failed_at_row' => $failedRow,
+            ];
         }
     }
 
@@ -436,7 +512,7 @@ class C_Master extends BaseController
     /**
      * @param array<string, mixed> $state
      */
-    private function runPelangganImportChunks($reader, array &$state): void
+    private function runPelangganImportChunks($reader, array &$state): bool
     {
         $db = db_connect();
         $totalRows = max(2, (int) ($state['total_rows'] ?? 2));
@@ -444,6 +520,7 @@ class C_Master extends BaseController
         $columnMap = is_array($state['column_map'] ?? null) ? $state['column_map'] : [];
         $deletedPeriods = is_array($state['deleted_periods'] ?? null) ? $state['deleted_periods'] : [];
         $insertedRows = (int) ($state['inserted_rows'] ?? 0);
+        $chunksProcessed = 0;
 
         for ($startRow = $nextRow; $startRow <= $totalRows; $startRow += self::PELANGGAN_IMPORT_CHUNK_SIZE) {
             $chunkFilter = new SheetChunkReadFilter($startRow, self::PELANGGAN_IMPORT_CHUNK_SIZE);
@@ -513,7 +590,14 @@ class C_Master extends BaseController
             $state['failed_at_row'] = null;
             $state['updated_at'] = date('c');
             $this->savePelangganImportState($state);
+
+            $chunksProcessed++;
+            if ($chunksProcessed >= self::PELANGGAN_IMPORT_MAX_CHUNKS_PER_REQUEST) {
+                break;
+            }
         }
+
+        return ((int) ($state['next_row'] ?? 2)) > $totalRows;
     }
 
     /**
@@ -609,7 +693,7 @@ class C_Master extends BaseController
 
         $map = [];
         foreach ($headerRow as $column => $header) {
-            $label = strtolower(preg_replace('/[^a-z0-9]+/', '', (string) $header) ?? '');
+            $label = strtolower(preg_replace('/[^a-z0-9]+/i', '', (string) $header) ?? '');
             if ($label === '') {
                 continue;
             }
@@ -650,6 +734,64 @@ class C_Master extends BaseController
                     'column_map' => $columnMap,
                 ];
             }
+        }
+
+        // Fallback: some spreadsheet formats may not expose header row correctly
+        // with chunk read filters, so retry by loading the sheet normally.
+        try {
+            $reader->setReadFilter(new \PhpOffice\PhpSpreadsheet\Reader\DefaultReadFilter());
+            $sheet = $reader->load($filePath)->getActiveSheet();
+
+            $highestRow = (int) $sheet->getHighestRow();
+            $highestColumn = $sheet->getHighestColumn();
+            $scanUntil = min(max(1, $highestRow), $maxScanRows);
+
+            for ($rowNumber = 1; $rowNumber <= $scanUntil; $rowNumber++) {
+                $headerRow = $sheet->rangeToArray(
+                    'A' . $rowNumber . ':' . $highestColumn . $rowNumber,
+                    null,
+                    true,
+                    true,
+                    true
+                )[$rowNumber] ?? [];
+
+                $columnMap = $this->buildImportColumnMap($headerRow);
+                if (isset($columnMap['idpel']) && isset($columnMap['v_bulan_rekap'])) {
+                    return [
+                        'header_row' => $rowNumber,
+                        'column_map' => $columnMap,
+                    ];
+                }
+            }
+        } catch (Throwable) {
+            // Keep null result to trigger existing validation message upstream.
+        }
+
+        return null;
+    }
+
+    /**
+     * @return array{header_row:int, column_map:array<string, string>}|null
+     */
+    private function detectImportHeaderBySheetScan(string $filePath, int $maxScanRows = 20): ?array
+    {
+        try {
+            $sheet = IOFactory::load($filePath)->getActiveSheet();
+            $rows = $sheet->toArray(null, true, true, true);
+            $scanLimit = min($maxScanRows, count($rows));
+
+            for ($rowNumber = 1; $rowNumber <= $scanLimit; $rowNumber++) {
+                $headerRow = (array) ($rows[$rowNumber] ?? []);
+                $columnMap = $this->buildImportColumnMap($headerRow);
+                if (isset($columnMap['idpel']) && isset($columnMap['v_bulan_rekap'])) {
+                    return [
+                        'header_row' => $rowNumber,
+                        'column_map' => $columnMap,
+                    ];
+                }
+            }
+        } catch (Throwable) {
+            return null;
         }
 
         return null;

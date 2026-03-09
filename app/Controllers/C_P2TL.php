@@ -3,6 +3,7 @@
 namespace App\Controllers;
 
 use App\Models\P2TLModel;
+use CodeIgniter\Database\BaseConnection;
 use CodeIgniter\HTTP\RedirectResponse;
 use CodeIgniter\HTTP\ResponseInterface;
 use PhpOffice\PhpSpreadsheet\IOFactory;
@@ -11,10 +12,12 @@ use Throwable;
 class C_P2TL extends BaseController
 {
     private P2TLModel $p2tlModel;
+    private BaseConnection $db;
 
     public function __construct()
     {
         $this->p2tlModel = new P2TLModel();
+        $this->db = db_connect();
     }
 
     public function index(): string
@@ -372,25 +375,38 @@ class C_P2TL extends BaseController
 
         $result = $this->p2tlModel->getDataPemakaianDatatable($filters, $start, $length, $search, $isAdmin, $userUnitId);
 
+        $normalizeIntValue = static function (mixed $value): int {
+            $raw = is_numeric($value) ? (float) $value : 0.0;
+
+            // Guard against accidentally persisted values in x1000 scale.
+            if ($raw >= 100000 && fmod($raw, 1000.0) === 0.0) {
+                $raw /= 1000.0;
+            }
+
+            return (int) round($raw);
+        };
+
         $data = [];
         foreach ($result['rows'] as $row) {
+            $dayaValue = $normalizeIntValue($row['daya'] ?? 0);
+
             $data[] = [
                 (string) ($row['idpel'] ?? ''),
                 (string) ($row['tarif'] ?? ''),
-                number_format((float) ($row['daya'] ?? 0), 0, ',', '.'),
+                (string) $dayaValue,
                 (string) ($row['tahun'] ?? ''),
-                number_format((float) ($row['januari'] ?? 0), 0, ',', '.'),
-                number_format((float) ($row['februari'] ?? 0), 0, ',', '.'),
-                number_format((float) ($row['maret'] ?? 0), 0, ',', '.'),
-                number_format((float) ($row['april'] ?? 0), 0, ',', '.'),
-                number_format((float) ($row['mei'] ?? 0), 0, ',', '.'),
-                number_format((float) ($row['juni'] ?? 0), 0, ',', '.'),
-                number_format((float) ($row['juli'] ?? 0), 0, ',', '.'),
-                number_format((float) ($row['agustus'] ?? 0), 0, ',', '.'),
-                number_format((float) ($row['september'] ?? 0), 0, ',', '.'),
-                number_format((float) ($row['oktober'] ?? 0), 0, ',', '.'),
-                number_format((float) ($row['november'] ?? 0), 0, ',', '.'),
-                number_format((float) ($row['desember'] ?? 0), 0, ',', '.'),
+                (string) $normalizeIntValue($row['januari'] ?? 0),
+                (string) $normalizeIntValue($row['februari'] ?? 0),
+                (string) $normalizeIntValue($row['maret'] ?? 0),
+                (string) $normalizeIntValue($row['april'] ?? 0),
+                (string) $normalizeIntValue($row['mei'] ?? 0),
+                (string) $normalizeIntValue($row['juni'] ?? 0),
+                (string) $normalizeIntValue($row['juli'] ?? 0),
+                (string) $normalizeIntValue($row['agustus'] ?? 0),
+                (string) $normalizeIntValue($row['september'] ?? 0),
+                (string) $normalizeIntValue($row['oktober'] ?? 0),
+                (string) $normalizeIntValue($row['november'] ?? 0),
+                (string) $normalizeIntValue($row['desember'] ?? 0),
             ];
         }
 

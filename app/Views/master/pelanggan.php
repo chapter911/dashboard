@@ -53,16 +53,30 @@ $resumePercent = min(100, (int) floor(($resumeDoneRows / $resumeDataRows) * 100)
                 <div class="small text-muted mb-2">
                     Update terakhir: <?= esc($resumeUpdatedAtText) ?>
                 </div>
+                <div class="small mb-2" id="autoResumeStatus"></div>
+                <div class="form-check form-switch mb-2">
+                    <input class="form-check-input" type="checkbox" role="switch" id="autoResumeToggle" checked>
+                    <label class="form-check-label" for="autoResumeToggle">Auto lanjutkan import</label>
+                </div>
                 <div class="d-flex gap-2 flex-wrap">
                     <form method="post" action="<?= site_url('C_Master/Pelanggan/resume') ?>" class="d-inline">
                         <?= csrf_field() ?>
                         <input type="hidden" name="resume_token" value="<?= esc($resumeToken) ?>">
                         <button class="btn btn-warning btn-sm" type="submit">Lanjutkan Import</button>
                     </form>
+                    <button
+                        class="btn btn-primary btn-sm"
+                        type="button"
+                        id="btnAutoResumeImport"
+                        data-token="<?= esc($resumeToken) ?>"
+                        data-url="<?= site_url('C_Master/Pelanggan/resume/auto') ?>"
+                    >
+                        Lanjutkan Otomatis
+                    </button>
                     <form method="post" action="<?= site_url('C_Master/Pelanggan/resume/cancel') ?>" class="d-inline" onsubmit="return confirm('Batalkan resume import? Progress sementara akan dihapus.');">
                         <?= csrf_field() ?>
                         <input type="hidden" name="resume_token" value="<?= esc($resumeToken) ?>">
-                        <button class="btn btn-outline-danger btn-sm" type="submit">Batalkan Resume</button>
+                        <button class="btn btn-outline-danger btn-sm" type="submit">Batalkan Import</button>
                     </form>
                 </div>
             </div>
@@ -226,6 +240,106 @@ $(function () {
 
     $('#btn-filter-pelanggan').on('click', function () { table.draw(); });
     $('#filter_idpel').on('keypress', function (e) { if (e.which === 13) { e.preventDefault(); table.draw(); } });
+
+    var $autoResumeBtn = $('#btnAutoResumeImport');
+    var $autoResumeStatus = $('#autoResumeStatus');
+    var $autoResumeToggle = $('#autoResumeToggle');
+    var autoResumeRunning = false;
+    var autoResumePrefKey = 'pelanggan_import_auto_resume_enabled';
+
+    var setAutoStatus = function (message, isError) {
+        if (!$autoResumeStatus.length) return;
+        $autoResumeStatus
+            .toggleClass('text-danger', !!isError)
+            .toggleClass('text-muted', !isError)
+            .text(message || '');
+    };
+
+    var handleAutoResume = function () {
+        if (!autoResumeRunning || !$autoResumeBtn.length) return;
+
+        $.ajax({
+            url: $autoResumeBtn.data('url'),
+            type: 'POST',
+            dataType: 'json',
+            data: (function () {
+                var payload = { resume_token: $autoResumeBtn.data('token') };
+                payload[csrfName] = $form.find('input[name="' + csrfName + '"]').val();
+                return payload;
+            })(),
+            success: function (resp, _textStatus, xhr) {
+                var freshCsrf = xhr ? xhr.getResponseHeader('X-CSRF-TOKEN') : null;
+                if (freshCsrf) {
+                    syncCsrfToken(freshCsrf);
+                }
+
+                if (!resp || !resp.status) {
+                    setAutoStatus('Respons server tidak valid. Coba lanjutkan manual.', true);
+                    autoResumeRunning = false;
+                    $autoResumeBtn.prop('disabled', false).text('Lanjutkan Otomatis');
+                    return;
+                }
+
+                if (resp.status === 'in_progress') {
+                    var pct = typeof resp.progress_percent !== 'undefined' ? resp.progress_percent : '?';
+                    var inserted = typeof resp.inserted_rows !== 'undefined' ? resp.inserted_rows : '?';
+                    setAutoStatus('Proses berjalan: ' + pct + '% (tersimpan: ' + inserted + ' baris).', false);
+                    window.setTimeout(handleAutoResume, 250);
+                    return;
+                }
+
+                if (resp.status === 'success') {
+                    setAutoStatus(resp.message || 'Import selesai.', false);
+                    window.location.reload();
+                    return;
+                }
+
+                setAutoStatus(resp.message || 'Resume otomatis gagal. Coba lanjutkan manual.', true);
+                autoResumeRunning = false;
+                $autoResumeBtn.prop('disabled', false).text('Lanjutkan Otomatis');
+            },
+            error: function () {
+                setAutoStatus('Koneksi ke server terputus. Anda bisa klik Lanjutkan Otomatis lagi.', true);
+                autoResumeRunning = false;
+                $autoResumeBtn.prop('disabled', false).text('Lanjutkan Otomatis');
+            }
+        });
+    };
+
+    $autoResumeBtn.on('click', function () {
+        if (autoResumeRunning) return;
+        autoResumeRunning = true;
+        $(this).prop('disabled', true).text('Memproses...');
+        setAutoStatus('Memulai resume otomatis...', false);
+        handleAutoResume();
+    });
+
+    if ($autoResumeToggle.length) {
+        try {
+            var savedPref = window.localStorage.getItem(autoResumePrefKey);
+            if (savedPref !== null) {
+                $autoResumeToggle.prop('checked', savedPref === '1');
+            }
+        } catch (e) {
+            // ignore localStorage access errors
+        }
+
+        $autoResumeToggle.on('change', function () {
+            try {
+                window.localStorage.setItem(autoResumePrefKey, $(this).is(':checked') ? '1' : '0');
+            } catch (e) {
+                // ignore localStorage access errors
+            }
+        });
+    }
+
+    if ($autoResumeBtn.length && (!$autoResumeToggle.length || $autoResumeToggle.is(':checked'))) {
+        window.setTimeout(function () {
+            if (!autoResumeRunning) {
+                $autoResumeBtn.trigger('click');
+            }
+        }, 350);
+    }
 });
 </script>
 <?= $this->endSection() ?>
