@@ -17,7 +17,7 @@ class C_Master extends BaseController
     private const PELANGGAN_IMPORT_STATE_PREFIX = 'pelanggan_import_';
     private const PELANGGAN_IMPORT_CHUNK_SIZE = 1000;
     private const PELANGGAN_IMPORT_BATCH_SIZE = 500;
-    private const PELANGGAN_IMPORT_MAX_CHUNKS_PER_REQUEST = 3;
+    private const PELANGGAN_IMPORT_MAX_CHUNKS_PER_REQUEST = 1;
 
     public function kategoriTegangan(): string
     {
@@ -287,9 +287,6 @@ class C_Master extends BaseController
 
             $headerDetection = $this->detectImportHeader($reader, $targetPath, 20);
             if (! is_array($headerDetection)) {
-                $headerDetection = $this->detectImportHeaderBySheetScan($targetPath, 20);
-            }
-            if (! is_array($headerDetection)) {
                 return redirect()->to('/C_Master/Pelanggan')->with('error', 'Kolom wajib IDPEL dan V_BULAN_REKAP tidak ditemukan pada file.');
             }
 
@@ -318,7 +315,7 @@ class C_Master extends BaseController
             $this->savePelangganImportState($state);
             session()->set('pelanggan_import_resume_token', $token);
 
-            return $this->continuePelangganImportByToken($token);
+            return redirect()->to('/C_Master/Pelanggan')->with('success', 'File berhasil diupload. Import dijalankan bertahap untuk mencegah timeout, mohon tunggu proses auto-resume sampai selesai.');
         } catch (Throwable $e) {
             log_message('error', 'MASTER_PELANGGAN_IMPORT_FAILED: {message}', ['message' => $e->getMessage()]);
 
@@ -536,7 +533,7 @@ class C_Master extends BaseController
                 foreach ($columnMap as $field => $columnLetter) {
                     $payload[$field] = $this->normalizeImportedValue(
                         (string) $field,
-                        $sheet->getCell((string) $columnLetter . $row)->getCalculatedValue()
+                        $sheet->getCell((string) $columnLetter . $row)->getValue()
                     );
                 }
 
@@ -714,37 +711,11 @@ class C_Master extends BaseController
      */
     private function detectImportHeader($reader, string $filePath, int $maxScanRows = 20): ?array
     {
-        for ($rowNumber = 1; $rowNumber <= $maxScanRows; $rowNumber++) {
-            $headerFilter = new SheetChunkReadFilter($rowNumber, 1);
-            $reader->setReadFilter($headerFilter);
-            $headerSheet = $reader->load($filePath)->getActiveSheet();
-
-            $headerRow = $headerSheet->rangeToArray(
-                'A' . $rowNumber . ':' . $headerSheet->getHighestColumn() . $rowNumber,
-                null,
-                true,
-                true,
-                true
-            )[$rowNumber] ?? [];
-
-            $columnMap = $this->buildImportColumnMap($headerRow);
-            if (isset($columnMap['idpel']) && isset($columnMap['v_bulan_rekap'])) {
-                return [
-                    'header_row' => $rowNumber,
-                    'column_map' => $columnMap,
-                ];
-            }
-        }
-
-        // Fallback: some spreadsheet formats may not expose header row correctly
-        // with chunk read filters, so retry by loading the sheet normally.
         try {
-            $reader->setReadFilter(new \PhpOffice\PhpSpreadsheet\Reader\DefaultReadFilter());
+            $reader->setReadFilter(new SheetChunkReadFilter(1, max(1, $maxScanRows)));
             $sheet = $reader->load($filePath)->getActiveSheet();
-
-            $highestRow = (int) $sheet->getHighestRow();
             $highestColumn = $sheet->getHighestColumn();
-            $scanUntil = min(max(1, $highestRow), $maxScanRows);
+            $scanUntil = min($maxScanRows, (int) $sheet->getHighestRow());
 
             for ($rowNumber = 1; $rowNumber <= $scanUntil; $rowNumber++) {
                 $headerRow = $sheet->rangeToArray(
@@ -755,33 +726,6 @@ class C_Master extends BaseController
                     true
                 )[$rowNumber] ?? [];
 
-                $columnMap = $this->buildImportColumnMap($headerRow);
-                if (isset($columnMap['idpel']) && isset($columnMap['v_bulan_rekap'])) {
-                    return [
-                        'header_row' => $rowNumber,
-                        'column_map' => $columnMap,
-                    ];
-                }
-            }
-        } catch (Throwable) {
-            // Keep null result to trigger existing validation message upstream.
-        }
-
-        return null;
-    }
-
-    /**
-     * @return array{header_row:int, column_map:array<string, string>}|null
-     */
-    private function detectImportHeaderBySheetScan(string $filePath, int $maxScanRows = 20): ?array
-    {
-        try {
-            $sheet = IOFactory::load($filePath)->getActiveSheet();
-            $rows = $sheet->toArray(null, true, true, true);
-            $scanLimit = min($maxScanRows, count($rows));
-
-            for ($rowNumber = 1; $rowNumber <= $scanLimit; $rowNumber++) {
-                $headerRow = (array) ($rows[$rowNumber] ?? []);
                 $columnMap = $this->buildImportColumnMap($headerRow);
                 if (isset($columnMap['idpel']) && isset($columnMap['v_bulan_rekap'])) {
                     return [
