@@ -75,7 +75,7 @@ $resumePercent = min(100, (int) floor(($resumeDoneRows / $resumeDataRows) * 100)
                     <label class="form-check-label" for="autoResumeToggle">Auto lanjutkan import</label>
                 </div>
                 <div class="d-flex gap-2 flex-wrap">
-                    <form method="post" action="<?= site_url('C_Master/Pelanggan/resume') ?>" class="d-inline">
+                    <form method="post" action="<?= site_url('C_Master/Pelanggan/resume') ?>" class="d-inline" data-skip-swal-loading="1">
                         <?= csrf_field() ?>
                         <input type="hidden" name="resume_token" value="<?= esc($resumeToken) ?>">
                         <button class="btn btn-warning btn-sm" type="submit">Lanjutkan Import</button>
@@ -89,7 +89,7 @@ $resumePercent = min(100, (int) floor(($resumeDoneRows / $resumeDataRows) * 100)
                     >
                         Lanjutkan Otomatis
                     </button>
-                    <form method="post" action="<?= site_url('C_Master/Pelanggan/resume/cancel') ?>" class="d-inline" onsubmit="return confirm('Batalkan resume import? Progress sementara akan dihapus.');">
+                    <form method="post" action="<?= site_url('C_Master/Pelanggan/resume/cancel') ?>" class="d-inline" data-skip-swal-loading="1" onsubmit="return confirm('Batalkan resume import? Progress sementara akan dihapus.');">
                         <?= csrf_field() ?>
                         <input type="hidden" name="resume_token" value="<?= esc($resumeToken) ?>">
                         <button class="btn btn-outline-danger btn-sm" type="submit">Batalkan Import</button>
@@ -97,7 +97,7 @@ $resumePercent = min(100, (int) floor(($resumeDoneRows / $resumeDataRows) * 100)
                 </div>
             </div>
         <?php endif; ?>
-        <form method="post" action="<?= site_url('C_Master/Pelanggan/import') ?>" enctype="multipart/form-data" class="row g-3">
+        <form method="post" action="<?= site_url('C_Master/Pelanggan/import') ?>" enctype="multipart/form-data" class="row g-3" data-skip-swal-loading="1">
             <?= csrf_field() ?>
             <div class="col-md-9">
                 <label class="form-label">File Excel (.xlsx/.xls)</label>
@@ -263,6 +263,7 @@ $(function () {
     var $autoResumeProgressBar = $('#autoResumeProgressBar');
     var $autoResumeProgressMeta = $('#autoResumeProgressMeta');
     var autoResumeRunning = false;
+    var autoResumeXhr = null;
     var autoResumePrefKey = 'pelanggan_import_auto_resume_enabled';
 
     var setAutoProgress = function (pct) {
@@ -313,10 +314,11 @@ $(function () {
     var handleAutoResume = function () {
         if (!autoResumeRunning || !$autoResumeBtn.length) return;
 
-        $.ajax({
+        autoResumeXhr = $.ajax({
             url: $autoResumeBtn.data('url'),
             type: 'POST',
             dataType: 'json',
+            skipSwalLoading: true,
             data: (function () {
                 var payload = { resume_token: $autoResumeBtn.data('token') };
                 payload[csrfName] = $form.find('input[name="' + csrfName + '"]').val();
@@ -359,18 +361,34 @@ $(function () {
                 autoResumeRunning = false;
                 $autoResumeBtn.prop('disabled', false).text('Lanjutkan Otomatis');
             },
-            error: function () {
+            error: function (_xhr, textStatus) {
+                if (textStatus === 'abort') {
+                    return;
+                }
                 setAutoStatus('Koneksi ke server terputus. Anda bisa klik Lanjutkan Otomatis lagi.', true);
                 autoResumeRunning = false;
                 $autoResumeBtn.prop('disabled', false).text('Lanjutkan Otomatis');
+            },
+            complete: function () {
+                autoResumeXhr = null;
             }
         });
     };
 
     $autoResumeBtn.on('click', function () {
-        if (autoResumeRunning) return;
+        if (autoResumeRunning) {
+            autoResumeRunning = false;
+            if (autoResumeXhr && typeof autoResumeXhr.abort === 'function') {
+                autoResumeXhr.abort();
+            }
+            autoResumeXhr = null;
+            $(this).prop('disabled', false).text('Lanjutkan Otomatis');
+            setAutoStatus('Resume otomatis dihentikan oleh pengguna.', true);
+            return;
+        }
+
         autoResumeRunning = true;
-        $(this).prop('disabled', true).text('Memproses...');
+        $(this).prop('disabled', false).text('Hentikan Otomatis');
         setAutoStatus('Memulai resume otomatis...', false);
         handleAutoResume();
     });
