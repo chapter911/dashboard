@@ -264,6 +264,9 @@ $(function () {
     var $autoResumeProgressMeta = $('#autoResumeProgressMeta');
     var autoResumeRunning = false;
     var autoResumeXhr = null;
+    var autoResumeRetryCount = 0;
+    var autoResumeBaseRetryDelayMs = 1500;
+    var autoResumeMaxRetryDelayMs = 10000;
     var autoResumePrefKey = 'pelanggan_import_auto_resume_enabled';
 
     var setAutoProgress = function (pct) {
@@ -314,6 +317,8 @@ $(function () {
     var handleAutoResume = function () {
         if (!autoResumeRunning || !$autoResumeBtn.length) return;
 
+        var retryDelay = Math.min(autoResumeMaxRetryDelayMs, autoResumeBaseRetryDelayMs * Math.max(1, autoResumeRetryCount));
+
         autoResumeXhr = $.ajax({
             url: $autoResumeBtn.data('url'),
             type: 'POST',
@@ -338,6 +343,7 @@ $(function () {
                 }
 
                 if (resp.status === 'in_progress') {
+                    autoResumeRetryCount = 0;
                     var pct = typeof resp.progress_percent !== 'undefined' ? resp.progress_percent : '?';
                     var inserted = typeof resp.inserted_rows !== 'undefined' ? resp.inserted_rows : '?';
                     var processed = typeof resp.processed_rows !== 'undefined' ? resp.processed_rows : null;
@@ -345,11 +351,12 @@ $(function () {
                     setAutoProgress(pct);
                     setAutoProgressMeta(processed, totalRows);
                     setAutoStatus('Proses berjalan: ' + pct + '% (tersimpan: ' + inserted + ' baris).', false);
-                    window.setTimeout(handleAutoResume, 250);
+                    window.setTimeout(handleAutoResume, 500);
                     return;
                 }
 
                 if (resp.status === 'success') {
+                    autoResumeRetryCount = 0;
                     setAutoProgress(100);
                     setAutoProgressMeta(resp.total_rows, resp.total_rows);
                     setAutoStatus(resp.message || 'Import selesai.', false);
@@ -365,9 +372,18 @@ $(function () {
                 if (textStatus === 'abort') {
                     return;
                 }
-                setAutoStatus('Koneksi ke server terputus. Anda bisa klik Lanjutkan Otomatis lagi.', true);
-                autoResumeRunning = false;
-                $autoResumeBtn.prop('disabled', false).text('Lanjutkan Otomatis');
+
+                if (!autoResumeRunning) {
+                    return;
+                }
+
+                autoResumeRetryCount += 1;
+                setAutoStatus('Koneksi ke server terputus. Mencoba lagi otomatis dalam ' + Math.ceil(retryDelay / 1000) + ' detik (percobaan ke-' + autoResumeRetryCount + ').', true);
+                window.setTimeout(function () {
+                    if (autoResumeRunning) {
+                        handleAutoResume();
+                    }
+                }, retryDelay);
             },
             complete: function () {
                 autoResumeXhr = null;
@@ -378,6 +394,7 @@ $(function () {
     $autoResumeBtn.on('click', function () {
         if (autoResumeRunning) {
             autoResumeRunning = false;
+            autoResumeRetryCount = 0;
             if (autoResumeXhr && typeof autoResumeXhr.abort === 'function') {
                 autoResumeXhr.abort();
             }
@@ -388,6 +405,7 @@ $(function () {
         }
 
         autoResumeRunning = true;
+        autoResumeRetryCount = 0;
         $(this).prop('disabled', false).text('Hentikan Otomatis');
         setAutoStatus('Memulai resume otomatis...', false);
         handleAutoResume();
