@@ -38,6 +38,8 @@ $routes->post('C_Utility/User/create', 'C_Utility::createUser', ['filter' => 'au
 $routes->post('C_Utility/User/update', 'C_Utility::updateUser', ['filter' => 'auth']);
 $routes->post('C_Utility/User/toggle-active', 'C_Utility::toggleActive', ['filter' => 'auth']);
 $routes->post('C_Utility/User/reset-password', 'C_Utility::resetPassword', ['filter' => 'auth']);
+$routes->get('logviewer', 'LogViewer::index', ['filter' => 'auth']);
+$routes->get('logviewer/show/(:any)', 'LogViewer::show/$1', ['filter' => 'auth']);
 
 $routes->get('C_Utility/UserGroup', 'C_Utility::userGroupIndex', ['filter' => 'auth']);
 $routes->post('C_Utility/UserGroup/create', 'C_Utility::createUserGroup', ['filter' => 'auth']);
