@@ -22,6 +22,61 @@ $syncTableOptions = is_array($syncTableOptions ?? null) ? $syncTableOptions : []
                 <?= esc(session()->getFlashdata('success')) ?>
             </div>
         <?php endif; ?>
+            <div class="card mt-4 mb-4">
+                <div class="card-header">
+                    <h6 class="mb-0">Log Error Aplikasi</h6>
+                </div>
+                <div class="card-body">
+                    <div class="mb-3">
+                        <label for="logFileSelect" class="form-label">Pilih File Log</label>
+                        <div class="input-group">
+                            <select class="form-select" id="logFileSelect">
+                                <option value="log-2026-03-09.log">log-2026-03-09.log</option>
+                                <option value="log-2026-03-08.log">log-2026-03-08.log</option>
+                                <option value="log-2026-03-07.log">log-2026-03-07.log</option>
+                                <option value="log-2026-03-06.log">log-2026-03-06.log</option>
+                            </select>
+                            <button class="btn btn-outline-danger" id="btnShowLog" type="button">
+                                <i class="ti ti-file-text me-1"></i> Tampilkan Log
+                            </button>
+                        </div>
+                    </div>
+                    <div class="mt-2 small text-muted">Pilih file log lalu klik tombol untuk membaca isi log error aplikasi.</div>
+                </div>
+            </div>
+
+            <!-- Modal -->
+            <div class="modal fade" id="logModal" tabindex="-1" aria-labelledby="logModalLabel" aria-hidden="true">
+              <div class="modal-dialog modal-lg">
+                <div class="modal-content">
+                  <div class="modal-header">
+                    <h5 class="modal-title" id="logModalLabel">Log File</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                  </div>
+                  <div class="modal-body">
+                    <pre id="logModalContent" style="background:#222;color:#fff;padding:1em;overflow:auto;max-height:600px;"></pre>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <script>
+            document.getElementById('btnShowLog').addEventListener('click', function() {
+                var select = document.getElementById('logFileSelect');
+                var filename = select.value;
+                var modal = new bootstrap.Modal(document.getElementById('logModal'));
+                var modalLabel = document.getElementById('logModalLabel');
+                var modalContent = document.getElementById('logModalContent');
+                modalLabel.textContent = 'Log File: ' + filename;
+                modalContent.textContent = 'Loading...';
+                fetch('/setting/application/log-content?file=' + encodeURIComponent(filename))
+                    .then(function(response) { return response.text(); })
+                    .then(function(text) {
+                        modalContent.textContent = text;
+                    });
+                modal.show();
+            });
+            </script>
 
         <?php if (session()->getFlashdata('error')): ?>
             <div class="alert alert-danger" role="alert">

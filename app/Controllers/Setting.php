@@ -57,6 +57,22 @@ class Setting extends BaseController
             ],
         ]);
     }
+        // AJAX endpoint for log file content
+        public function logContent()
+        {
+            $filename = $this->request->getGet('file');
+            $logDir = WRITEPATH . 'logs';
+            $allowed = ['log-2026-03-09.log', 'log-2026-03-08.log', 'log-2026-03-07.log', 'log-2026-03-06.log'];
+            if (!$filename || !in_array($filename, $allowed, true)) {
+                return $this->response->setStatusCode(404)->setBody('File not found.');
+            }
+            $filePath = $logDir . DIRECTORY_SEPARATOR . $filename;
+            if (!file_exists($filePath)) {
+                return $this->response->setStatusCode(404)->setBody('File not found.');
+            }
+            $content = file_get_contents($filePath);
+            return $this->response->setHeader('Content-Type', 'text/plain')->setBody($content);
+        }
 
     public function update()
     {
