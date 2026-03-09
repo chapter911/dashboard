@@ -18,7 +18,7 @@ class C_Master extends BaseController
     private const PELANGGAN_IMPORT_CHUNK_SIZE = 1000;
     private const PELANGGAN_IMPORT_BATCH_SIZE = 500;
     private const PELANGGAN_IMPORT_MAX_CHUNKS_PER_REQUEST = 1;
-    private const PELANGGAN_IMPORT_MAX_UPLOAD_MB = 40;
+    private const PELANGGAN_IMPORT_MAX_UPLOAD_MB = 10;
 
     public function kategoriTegangan(): string
     {
@@ -300,7 +300,7 @@ class C_Master extends BaseController
             $this->savePelangganImportState($state);
             session()->set('pelanggan_import_resume_token', $token);
 
-            return redirect()->to('/C_Master/Pelanggan')->with('success', 'File berhasil diupload. Import dijalankan bertahap untuk mencegah timeout, mohon tunggu proses auto-resume sampai selesai.');
+            return redirect()->to('/C_Master/Pelanggan')->with('success', 'File berhasil diupload. Import dijalankan bertahap.');
         } catch (Throwable $e) {
             log_message('error', 'MASTER_PELANGGAN_IMPORT_FAILED: {message}', ['message' => $e->getMessage()]);
 
