@@ -283,34 +283,18 @@ class C_Master extends BaseController
 
             $file->move(WRITEPATH . 'uploads', $tempName);
 
-            $reader = IOFactory::createReaderForFile($targetPath);
-            $reader->setReadDataOnly(true);
-
-            $headerDetection = $this->detectImportHeader($reader, $targetPath, 20);
-            if (! is_array($headerDetection)) {
-                return redirect()->to('/C_Master/Pelanggan')->with('error', 'Kolom wajib IDPEL dan V_BULAN_REKAP tidak ditemukan pada file.');
-            }
-
-            $columnMap = is_array($headerDetection['column_map'] ?? null) ? $headerDetection['column_map'] : [];
-            $headerRowNumber = (int) ($headerDetection['header_row'] ?? 1);
-
-            $worksheets = $reader->listWorksheetInfo($targetPath);
-            $totalRows = (int) ($worksheets[0]['totalRows'] ?? 0);
-            if ($totalRows <= $headerRowNumber) {
-                return redirect()->to('/C_Master/Pelanggan')->with('error', 'File tidak memiliki data untuk diimport.');
-            }
-
             $token = bin2hex(random_bytes(16));
             $state = [
                 'token' => $token,
                 'file_path' => $targetPath,
-                'total_rows' => $totalRows,
-                'header_row' => $headerRowNumber,
-                'next_row' => $headerRowNumber + 1,
-                'column_map' => $columnMap,
+                'total_rows' => 0,
+                'header_row' => 1,
+                'next_row' => 2,
+                'column_map' => [],
                 'deleted_periods' => [],
                 'inserted_rows' => 0,
                 'failed_at_row' => null,
+                'initialized' => false,
                 'updated_at' => date('c'),
             ];
             $this->savePelangganImportState($state);
@@ -418,6 +402,13 @@ class C_Master extends BaseController
             $reader = IOFactory::createReaderForFile($filePath);
             $reader->setReadDataOnly(true);
 
+            if (! $this->initializePelangganImportState($reader, $state)) {
+                return [
+                    'status' => 'error',
+                    'message' => 'Kolom wajib IDPEL dan V_BULAN_REKAP tidak ditemukan pada file.',
+                ];
+            }
+
             $isCompleted = $this->runPelangganImportChunks($reader, $state);
 
             if (! $isCompleted) {
@@ -488,6 +479,49 @@ class C_Master extends BaseController
                 'total_rows' => $totalDataRows,
             ];
         }
+    }
+
+    /**
+     * @param array<string, mixed> $state
+     */
+    private function initializePelangganImportState($reader, array &$state): bool
+    {
+        $alreadyInitialized = (bool) ($state['initialized'] ?? false);
+        $hasMap = is_array($state['column_map'] ?? null) && (array) $state['column_map'] !== [];
+        $hasTotal = (int) ($state['total_rows'] ?? 0) > 1;
+
+        if ($alreadyInitialized && $hasMap && $hasTotal) {
+            return true;
+        }
+
+        $filePath = (string) ($state['file_path'] ?? '');
+        if ($filePath === '' || ! is_file($filePath)) {
+            return false;
+        }
+
+        $headerDetection = $this->detectImportHeader($reader, $filePath, 20);
+        if (! is_array($headerDetection)) {
+            return false;
+        }
+
+        $columnMap = is_array($headerDetection['column_map'] ?? null) ? $headerDetection['column_map'] : [];
+        $headerRowNumber = (int) ($headerDetection['header_row'] ?? 1);
+        $worksheets = $reader->listWorksheetInfo($filePath);
+        $totalRows = (int) ($worksheets[0]['totalRows'] ?? 0);
+
+        if ($totalRows <= $headerRowNumber) {
+            return false;
+        }
+
+        $state['column_map'] = $columnMap;
+        $state['header_row'] = $headerRowNumber;
+        $state['total_rows'] = $totalRows;
+        $state['next_row'] = max((int) ($state['next_row'] ?? 2), $headerRowNumber + 1);
+        $state['initialized'] = true;
+        $state['updated_at'] = date('c');
+        $this->savePelangganImportState($state);
+
+        return true;
     }
 
     private function validateImportRequirements(string $extension): ?string
