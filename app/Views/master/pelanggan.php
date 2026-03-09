@@ -53,6 +53,22 @@ $resumePercent = min(100, (int) floor(($resumeDoneRows / $resumeDataRows) * 100)
                 <div class="small text-muted mb-2">
                     Update terakhir: <?= esc($resumeUpdatedAtText) ?>
                 </div>
+                <div class="mb-2">
+                    <div class="progress" style="height: 18px;">
+                        <div
+                            id="autoResumeProgressBar"
+                            class="progress-bar progress-bar-striped progress-bar-animated"
+                            role="progressbar"
+                            style="width: <?= esc((string) $resumePercent) ?>%;"
+                            aria-valuenow="<?= esc((string) $resumePercent) ?>"
+                            aria-valuemin="0"
+                            aria-valuemax="100"
+                        ><?= esc((string) $resumePercent) ?>%</div>
+                    </div>
+                    <div class="small text-muted mt-1" id="autoResumeProgressMeta">
+                        <?= esc((string) $resumeDoneRows) ?> / <?= esc((string) $resumeDataRows) ?> baris diproses
+                    </div>
+                </div>
                 <div class="small mb-2" id="autoResumeStatus"></div>
                 <div class="form-check form-switch mb-2">
                     <input class="form-check-input" type="checkbox" role="switch" id="autoResumeToggle" checked>
@@ -244,8 +260,47 @@ $(function () {
     var $autoResumeBtn = $('#btnAutoResumeImport');
     var $autoResumeStatus = $('#autoResumeStatus');
     var $autoResumeToggle = $('#autoResumeToggle');
+    var $autoResumeProgressBar = $('#autoResumeProgressBar');
+    var $autoResumeProgressMeta = $('#autoResumeProgressMeta');
     var autoResumeRunning = false;
     var autoResumePrefKey = 'pelanggan_import_auto_resume_enabled';
+
+    var setAutoProgress = function (pct) {
+        if (!$autoResumeProgressBar.length) return;
+
+        var num = parseInt(pct, 10);
+        if (isNaN(num)) {
+            return;
+        }
+
+        num = Math.max(0, Math.min(100, num));
+        $autoResumeProgressBar
+            .css('width', num + '%')
+            .attr('aria-valuenow', num)
+            .text(num + '%');
+
+        if (num >= 100) {
+            $autoResumeProgressBar.removeClass('progress-bar-animated');
+        }
+    };
+
+    var setAutoProgressMeta = function (processedRows, totalRows) {
+        if (!$autoResumeProgressMeta.length) return;
+
+        var processed = parseInt(processedRows, 10);
+        var total = parseInt(totalRows, 10);
+        if (isNaN(processed) || isNaN(total) || total < 1) {
+            return;
+        }
+
+        if (processed < 0) processed = 0;
+        if (processed > total) processed = total;
+
+        $autoResumeProgressMeta.text(processed + ' / ' + total + ' baris diproses');
+    };
+
+    setAutoProgress(<?= (int) $resumePercent ?>);
+    setAutoProgressMeta(<?= (int) $resumeDoneRows ?>, <?= (int) $resumeDataRows ?>);
 
     var setAutoStatus = function (message, isError) {
         if (!$autoResumeStatus.length) return;
@@ -283,12 +338,18 @@ $(function () {
                 if (resp.status === 'in_progress') {
                     var pct = typeof resp.progress_percent !== 'undefined' ? resp.progress_percent : '?';
                     var inserted = typeof resp.inserted_rows !== 'undefined' ? resp.inserted_rows : '?';
+                    var processed = typeof resp.processed_rows !== 'undefined' ? resp.processed_rows : null;
+                    var totalRows = typeof resp.total_rows !== 'undefined' ? resp.total_rows : null;
+                    setAutoProgress(pct);
+                    setAutoProgressMeta(processed, totalRows);
                     setAutoStatus('Proses berjalan: ' + pct + '% (tersimpan: ' + inserted + ' baris).', false);
                     window.setTimeout(handleAutoResume, 250);
                     return;
                 }
 
                 if (resp.status === 'success') {
+                    setAutoProgress(100);
+                    setAutoProgressMeta(resp.total_rows, resp.total_rows);
                     setAutoStatus(resp.message || 'Import selesai.', false);
                     window.location.reload();
                     return;

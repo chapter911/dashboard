@@ -18,6 +18,7 @@ class C_Master extends BaseController
     private const PELANGGAN_IMPORT_CHUNK_SIZE = 1000;
     private const PELANGGAN_IMPORT_BATCH_SIZE = 500;
     private const PELANGGAN_IMPORT_MAX_CHUNKS_PER_REQUEST = 1;
+    private const PELANGGAN_IMPORT_MAX_UPLOAD_MB = 40;
 
     public function kategoriTegangan(): string
     {
@@ -426,12 +427,16 @@ class C_Master extends BaseController
 
                 $progressPercent = $this->calculateImportProgressPercent($state);
                 $insertedRows = (int) ($state['inserted_rows'] ?? 0);
+                $processedRows = max(0, ((int) ($state['next_row'] ?? 2)) - 2);
+                $totalDataRows = max(1, ((int) ($state['total_rows'] ?? 1)) - 1);
 
                 return [
                     'status' => 'in_progress',
                     'message' => 'Import sedang berjalan bertahap (' . $progressPercent . '%). Data tersimpan sementara: ' . $insertedRows . ' baris. Klik "Lanjutkan Import" untuk melanjutkan.',
                     'progress_percent' => $progressPercent,
                     'inserted_rows' => $insertedRows,
+                    'processed_rows' => $processedRows,
+                    'total_rows' => $totalDataRows,
                 ];
             }
 
@@ -447,6 +452,8 @@ class C_Master extends BaseController
 
             $insertedRows = (int) ($state['inserted_rows'] ?? 0);
             $progressPercent = $this->calculateImportProgressPercent($state);
+            $processedRows = max(0, ((int) ($state['next_row'] ?? 2)) - 2);
+            $totalDataRows = max(1, ((int) ($state['total_rows'] ?? 1)) - 1);
             $this->cleanupPelangganImportState($token, true);
             session()->remove('pelanggan_import_resume_token');
 
@@ -455,6 +462,8 @@ class C_Master extends BaseController
                 'message' => 'Import data induk langganan berhasil (' . $progressPercent . '%). Total baris tersimpan: ' . $insertedRows . '.',
                 'progress_percent' => $progressPercent,
                 'inserted_rows' => $insertedRows,
+                'processed_rows' => $processedRows,
+                'total_rows' => $totalDataRows,
             ];
         } catch (Throwable $e) {
             $state['failed_at_row'] = (int) ($state['next_row'] ?? 2);
@@ -466,6 +475,8 @@ class C_Master extends BaseController
 
             $failedRow = (int) ($state['failed_at_row'] ?? 2);
             $progressPercent = $this->calculateImportProgressPercent($state);
+            $processedRows = max(0, ((int) ($state['next_row'] ?? 2)) - 2);
+            $totalDataRows = max(1, ((int) ($state['total_rows'] ?? 1)) - 1);
             $friendlyMessage = $this->buildFriendlyImportErrorMessage($e->getMessage());
 
             return [
@@ -473,6 +484,8 @@ class C_Master extends BaseController
                 'message' => $friendlyMessage . ' Import gagal di sekitar baris ' . $failedRow . ' (progress ' . $progressPercent . '%). Klik tombol "Lanjutkan Import" untuk melanjutkan proses.',
                 'progress_percent' => $progressPercent,
                 'failed_at_row' => $failedRow,
+                'processed_rows' => $processedRows,
+                'total_rows' => $totalDataRows,
             ];
         }
     }
@@ -787,10 +800,13 @@ class C_Master extends BaseController
 
         $effective = min($uploadMax, $postMax);
         if ($effective <= 0) {
-            return 64;
+            return self::PELANGGAN_IMPORT_MAX_UPLOAD_MB;
         }
 
-        return max(1, (int) floor($effective / (1024 * 1024)));
+        $serverLimitMb = max(1, (int) floor($effective / (1024 * 1024)));
+
+        // Application guardrail: pelanggan import must never exceed 40 MB.
+        return min(self::PELANGGAN_IMPORT_MAX_UPLOAD_MB, $serverLimitMb);
     }
 
     private function toBytes(string $value): int
