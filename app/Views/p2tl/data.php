@@ -140,6 +140,9 @@
                         <div class="col-md-12">
                             <label class="form-label">File (xlsx/xls)</label>
                             <input type="file" class="form-control" name="file_import" accept=".xlsx,.xls" required>
+                            <div class="form-text mt-2">
+                                Download format: <a href="<?= site_url('C_P2TL/downloadImportAnalisaTemplate') ?>">Template Import Analisa (.xlsx)</a>
+                            </div>
                         </div>
                     </div>
                 </div>

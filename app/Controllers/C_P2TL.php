@@ -836,6 +836,36 @@ class C_P2TL extends BaseController
         return redirect()->back()->with('success', 'Import analisa berhasil.');
     }
 
+    public function downloadImportAnalisaTemplate(): ResponseInterface
+    {
+        $spreadsheet = new \PhpOffice\PhpSpreadsheet\Spreadsheet();
+        $sheet = $spreadsheet->getActiveSheet();
+        $sheet->setTitle('Template Import Analisa');
+
+        $headers = ['IDPEL', 'TARIF', 'DAYA', 'PEMAKAIAN_KWH'];
+        $sheet->fromArray($headers, null, 'A1');
+
+        // Contoh 1 baris agar user memahami format kolom import.
+        $sheet->fromArray(['12345678901', 'R1', 1300, 245], null, 'A2');
+
+        $sheet->getStyle('A1:D1')->getFont()->setBold(true);
+
+        foreach (range('A', 'D') as $col) {
+            $sheet->getColumnDimension($col)->setAutoSize(true);
+        }
+
+        $writer = new \PhpOffice\PhpSpreadsheet\Writer\Xlsx($spreadsheet);
+        ob_start();
+        $writer->save('php://output');
+        $binary = (string) ob_get_clean();
+
+        return $this->response
+            ->setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+            ->setHeader('Content-Disposition', 'attachment; filename="Template_Import_Analisa_P2TL.xlsx"')
+            ->setHeader('Content-Length', (string) strlen($binary))
+            ->setBody($binary);
+    }
+
     public function HitRate(): string
     {
         return view('p2tl/hit_rate', [
