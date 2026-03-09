@@ -369,7 +369,8 @@ SQL;
         $searchWhere = '';
         $searchWhereBinds = [];
         if ($searchValue !== '') {
-            $searchWhere = ($fixedWhere === '' ? ' WHERE ' : ' AND ') . '(x.idpel LIKE ? OR x.tarif LIKE ? OR CAST(x.daya AS CHAR) LIKE ? OR CAST(x.tahun AS CHAR) LIKE ?)';
+            $searchWhere = ($fixedWhere === '' ? ' WHERE ' : ' AND ') . '(x.idpel LIKE ? OR x.tarif LIKE ? OR CAST(x.daya AS CHAR) LIKE ? OR CAST(x.tahun AS CHAR) LIKE ? OR EXISTS (SELECT 1 FROM mst_data_induk_langganan mg WHERE mg.idpel = x.idpel AND mg.nomor_gardu LIKE ?))';
+            $searchWhereBinds[] = '%' . $searchValue . '%';
             $searchWhereBinds[] = '%' . $searchValue . '%';
             $searchWhereBinds[] = '%' . $searchValue . '%';
             $searchWhereBinds[] = '%' . $searchValue . '%';
@@ -393,11 +394,56 @@ SQL;
 
         $rows = $this->db->query($dataSql, array_merge($binds, $fixedWhereBinds, $searchWhereBinds))->getResultArray();
 
+        $idpels = array_values(array_unique(array_filter(array_map(static fn (array $row): string => (string) ($row['idpel'] ?? ''), $rows))));
+        $nomorGarduByIdpel = $this->getLatestNomorGarduByIdpels($idpels);
+
+        foreach ($rows as &$row) {
+            $idpelKey = (string) ($row['idpel'] ?? '');
+            $row['nomor_gardu'] = $nomorGarduByIdpel[$idpelKey] ?? '';
+        }
+        unset($row);
+
         return [
             'rows' => $rows,
             'total' => $total,
             'filtered' => $filtered,
         ];
+    }
+
+    /**
+     * @param list<string> $idpels
+     *
+     * @return array<string, string>
+     */
+    private function getLatestNomorGarduByIdpels(array $idpels): array
+    {
+        if ($idpels === []) {
+            return [];
+        }
+
+        $placeholder = implode(',', array_fill(0, count($idpels), '?'));
+        $sql = "SELECT d.idpel, d.nomor_gardu
+                FROM mst_data_induk_langganan d
+                INNER JOIN (
+                    SELECT idpel, MAX(v_bulan_rekap) AS max_bulan_rekap
+                    FROM mst_data_induk_langganan
+                    WHERE idpel IN ({$placeholder})
+                    GROUP BY idpel
+                ) x ON x.idpel = d.idpel AND x.max_bulan_rekap = d.v_bulan_rekap";
+
+        $rows = $this->db->query($sql, $idpels)->getResultArray();
+        $mapped = [];
+
+        foreach ($rows as $row) {
+            $idpel = (string) ($row['idpel'] ?? '');
+            if ($idpel === '') {
+                continue;
+            }
+
+            $mapped[$idpel] = (string) ($row['nomor_gardu'] ?? '');
+        }
+
+        return $mapped;
     }
 
     /**

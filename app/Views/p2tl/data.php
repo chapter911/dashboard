@@ -9,11 +9,12 @@
     border: 1px solid #fff !important;
 }
 #tableDataPemakaian tbody td,
-#tableDataPemakaian tbody td:nth-child(n+3) {
+#tableDataPemakaian tbody td:nth-child(n+4) {
     text-align: right;
 }
 #tableDataPemakaian tbody td:nth-child(1),
-#tableDataPemakaian tbody td:nth-child(2) {
+#tableDataPemakaian tbody td:nth-child(2),
+#tableDataPemakaian tbody td:nth-child(3) {
     text-align: left;
 }
 </style>
@@ -58,6 +59,7 @@
                     <tr>
                         <th>IDPEL</th>
                         <th>TARIF</th>
+                        <th>NOMOR GARDU</th>
                         <th>DAYA</th>
                         <th>TAHUN</th>
                         <th>JAN</th>
@@ -192,11 +194,12 @@
             { data: 12, defaultContent: '' },
             { data: 13, defaultContent: '' },
             { data: 14, defaultContent: '' },
-            { data: 15, defaultContent: '' }
+            { data: 15, defaultContent: '' },
+            { data: 16, defaultContent: '' }
         ],
         columnDefs: [
-            { className: 'text-end', targets: [2, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15] },
-            { className: 'text-center', targets: [3] }
+            { className: 'text-end', targets: [3, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] },
+            { className: 'text-center', targets: [4] }
         ],
         ajax: {
             url: '<?= site_url('C_P2TL/ajaxDataPemakaian') ?>',

@@ -393,6 +393,7 @@ class C_P2TL extends BaseController
             $data[] = [
                 (string) ($row['idpel'] ?? ''),
                 (string) ($row['tarif'] ?? ''),
+                (string) ($row['nomor_gardu'] ?? ''),
                 (string) $dayaValue,
                 (string) ($row['tahun'] ?? ''),
                 (string) $normalizeIntValue($row['januari'] ?? 0),
