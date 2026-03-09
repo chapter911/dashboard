@@ -319,6 +319,18 @@ SQL;
             $binds[] = (int) $unit;
         }
 
+        $countBaseSql = "SELECT
+                a.idpel,
+                a.tarif,
+                CASE
+                    WHEN MAX(a.daya) >= 100000 AND MOD(MAX(a.daya), 1000) = 0 THEN MAX(a.daya) / 1000
+                    ELSE MAX(a.daya)
+                END AS daya,
+                YEAR(a.periode) AS tahun
+            FROM trn_p2tl_analisa a
+            WHERE a.periode >= ? AND a.periode < ?{$unitWhere}
+            GROUP BY a.idpel, a.tarif, YEAR(a.periode)";
+
         $analisaSql = "SELECT
                 a.idpel,
                 a.tarif,
@@ -343,39 +355,48 @@ SQL;
             WHERE a.periode >= ? AND a.periode < ?{$unitWhere}
             GROUP BY a.idpel, a.tarif, YEAR(a.periode)";
 
-        $baseSql = 'SELECT * FROM (' . $analisaSql . ') x';
+        $countSqlBaseWrapped = 'SELECT * FROM (' . $countBaseSql . ') x';
+        $dataSqlBaseWrapped = 'SELECT * FROM (' . $analisaSql . ') x';
 
-        $where = '';
-        $whereBinds = [];
+        $fixedWhere = '';
+        $fixedWhereBinds = [];
         if ($idpel !== '') {
-            $where .= ($where === '' ? ' WHERE ' : ' AND ') . 'x.idpel LIKE ?';
-            $whereBinds[] = '%' . $idpel . '%';
+            $fixedWhere .= ($fixedWhere === '' ? ' WHERE ' : ' AND ') . 'x.idpel LIKE ?';
+            $fixedWhereBinds[] = '%' . $idpel . '%';
         }
 
         $searchValue = trim((string) $search);
+        $searchWhere = '';
+        $searchWhereBinds = [];
         if ($searchValue !== '') {
-            $where .= ($where === '' ? ' WHERE ' : ' AND ') . '(x.idpel LIKE ? OR x.tarif LIKE ? OR CAST(x.daya AS CHAR) LIKE ? OR CAST(x.tahun AS CHAR) LIKE ?)';
-            $whereBinds[] = '%' . $searchValue . '%';
-            $whereBinds[] = '%' . $searchValue . '%';
-            $whereBinds[] = '%' . $searchValue . '%';
-            $whereBinds[] = '%' . $searchValue . '%';
+            $searchWhere = ($fixedWhere === '' ? ' WHERE ' : ' AND ') . '(x.idpel LIKE ? OR x.tarif LIKE ? OR CAST(x.daya AS CHAR) LIKE ? OR CAST(x.tahun AS CHAR) LIKE ?)';
+            $searchWhereBinds[] = '%' . $searchValue . '%';
+            $searchWhereBinds[] = '%' . $searchValue . '%';
+            $searchWhereBinds[] = '%' . $searchValue . '%';
+            $searchWhereBinds[] = '%' . $searchValue . '%';
         }
 
-        $countSql = 'SELECT COUNT(*) AS total FROM (' . $baseSql . ') x' . $where;
-        $total = (int) ($this->db->query($countSql, array_merge($binds, $whereBinds))->getRowArray()['total'] ?? 0);
+        $totalSql = 'SELECT COUNT(*) AS total FROM (' . $countSqlBaseWrapped . ') x' . $fixedWhere;
+        $total = (int) ($this->db->query($totalSql, array_merge($binds, $fixedWhereBinds))->getRowArray()['total'] ?? 0);
+
+        $filtered = $total;
+        if ($searchWhere !== '') {
+            $filteredSql = 'SELECT COUNT(*) AS total FROM (' . $countSqlBaseWrapped . ') x' . $fixedWhere . $searchWhere;
+            $filtered = (int) ($this->db->query($filteredSql, array_merge($binds, $fixedWhereBinds, $searchWhereBinds))->getRowArray()['total'] ?? 0);
+        }
 
         $orderBy = 'x.idpel ASC';
-        $dataSql = 'SELECT * FROM (' . $baseSql . ') x' . $where . ' ORDER BY ' . $orderBy;
+        $dataSql = 'SELECT * FROM (' . $dataSqlBaseWrapped . ') x' . $fixedWhere . $searchWhere . ' ORDER BY ' . $orderBy;
         if ($length > 0) {
             $dataSql .= ' LIMIT ' . (int) $start . ', ' . (int) $length;
         }
 
-        $rows = $this->db->query($dataSql, array_merge($binds, $whereBinds))->getResultArray();
+        $rows = $this->db->query($dataSql, array_merge($binds, $fixedWhereBinds, $searchWhereBinds))->getResultArray();
 
         return [
             'rows' => $rows,
             'total' => $total,
-            'filtered' => $total,
+            'filtered' => $filtered,
         ];
     }
 
