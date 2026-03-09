@@ -507,7 +507,8 @@ class C_Master extends BaseController
         $columnMap = is_array($headerDetection['column_map'] ?? null) ? $headerDetection['column_map'] : [];
         $headerRowNumber = (int) ($headerDetection['header_row'] ?? 1);
         $worksheets = $reader->listWorksheetInfo($filePath);
-        $totalRows = (int) ($worksheets[0]['totalRows'] ?? 0);
+        $dimensionRows = (int) ($worksheets[0]['totalRows'] ?? 0);
+        $totalRows = $this->detectActualTotalRows($filePath, $columnMap, $headerRowNumber, $dimensionRows);
 
         if ($totalRows <= $headerRowNumber) {
             return false;
@@ -522,6 +523,38 @@ class C_Master extends BaseController
         $this->savePelangganImportState($state);
 
         return true;
+    }
+
+    /**
+     * @param array<string, string> $columnMap
+     */
+    private function detectActualTotalRows(string $filePath, array $columnMap, int $headerRowNumber, int $fallbackRows): int
+    {
+        $fallback = max($headerRowNumber, $fallbackRows);
+        $idpelColumn = trim((string) ($columnMap['idpel'] ?? ''));
+        if ($idpelColumn === '') {
+            return $fallback;
+        }
+
+        try {
+            $countReader = IOFactory::createReaderForFile($filePath);
+            $countReader->setReadDataOnly(true);
+
+            if (method_exists($countReader, 'setReadEmptyCells')) {
+                $countReader->setReadEmptyCells(false);
+            }
+
+            $sheet = $countReader->load($filePath)->getActiveSheet();
+            $highestDataRow = (int) $sheet->getHighestDataRow($idpelColumn);
+
+            if ($highestDataRow > $headerRowNumber) {
+                return $highestDataRow;
+            }
+        } catch (Throwable) {
+            return $fallback;
+        }
+
+        return $fallback;
     }
 
     private function validateImportRequirements(string $extension): ?string
@@ -575,6 +608,7 @@ class C_Master extends BaseController
             $chunkRows = [];
             $chunkPeriods = [];
             $chunkHasNonEmptyCells = false;
+            $lastNonEmptyRowInChunk = 0;
 
             for ($row = $startRow; $row <= $endRow; $row++) {
                 $payload = [];
@@ -586,6 +620,10 @@ class C_Master extends BaseController
 
                     if (! $chunkHasNonEmptyCells && $payload[$field] !== null && $payload[$field] !== '') {
                         $chunkHasNonEmptyCells = true;
+                    }
+
+                    if ($payload[$field] !== null && $payload[$field] !== '') {
+                        $lastNonEmptyRowInChunk = $row;
                     }
                 }
 
@@ -609,6 +647,10 @@ class C_Master extends BaseController
                 $state['updated_at'] = date('c');
                 $this->savePelangganImportState($state);
                 break;
+            }
+
+            if ($lastNonEmptyRowInChunk > 0 && $lastNonEmptyRowInChunk < $endRow) {
+                $state['total_rows'] = max((int) ($state['header_row'] ?? 1), $lastNonEmptyRowInChunk);
             }
 
             $db->transStart();

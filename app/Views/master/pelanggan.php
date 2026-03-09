@@ -102,7 +102,8 @@ $resumePercent = min(100, (int) floor(($resumeDoneRows / $resumeDataRows) * 100)
             <div class="col-md-9">
                 <label class="form-label">File Excel (.xlsx/.xls)</label>
                 <input class="form-control" type="file" name="excel_file" accept=".xlsx,.xls" required>
-                <small class="text-danger fw-semibold">Maksimal ukuran file upload: <?= esc((string) $maxUploadMb) ?> MB.</small>
+                <small class="text-danger fw-semibold d-block">Maksimal ukuran file upload: <?= esc((string) $maxUploadMb) ?> MB.</small>
+                <small class="text-danger d-block">Rekomendasi jumlah data per file: sekitar ~30000 baris agar proses tetap stabil.</small>
             </div>
             <div class="col-md-3">
                 <label class="form-label d-block invisible">Aksi</label>
