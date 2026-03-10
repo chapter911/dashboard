@@ -167,6 +167,15 @@
     var csrfFieldName = '<?= esc(csrf_token()) ?>';
     var csrfToken = '<?= esc(csrf_hash()) ?>';
 
+    function applyCsrf(token) {
+        if (!token) {
+            return;
+        }
+
+        csrfToken = token;
+        $('input[name="' + csrfFieldName + '"]').val(token);
+    }
+
     if (!$.fn || !$.fn.DataTable) {
         console.error('DataTables plugin belum termuat pada halaman dataP2TL.');
         return;
@@ -219,9 +228,7 @@
                 } catch (e) {
                     fresh = null;
                 }
-                if (fresh) {
-                    csrfToken = fresh;
-                }
+                applyCsrf(fresh);
                 return Array.isArray(json.data) ? json.data : [];
             },
             beforeSend: function () {
@@ -229,12 +236,11 @@
             },
             complete: function (xhr) {
                 var fresh = xhr.getResponseHeader('X-CSRF-TOKEN');
-                if (fresh) {
-                    csrfToken = fresh;
-                }
+                applyCsrf(fresh);
                 Swal.close();
             },
             error: function (xhr) {
+                applyCsrf(xhr.getResponseHeader('X-CSRF-TOKEN'));
                 Swal.close();
                 Swal.fire('Error', 'Gagal mengambil data (' + (xhr && xhr.status ? xhr.status : 'unknown') + ').', 'error');
             }
@@ -256,6 +262,7 @@
     $('#btnFilter').on('click', function () { window.getData(); });
 
     $('#formImportData, #formImportAnalisa').on('submit', function () {
+        applyCsrf(csrfToken);
         Swal.fire({ title: 'Mohon Tunggu', html: 'Proses import berlangsung', allowOutsideClick: false, showConfirmButton: false, didOpen: function(){ Swal.showLoading(); } });
     });
 })();
