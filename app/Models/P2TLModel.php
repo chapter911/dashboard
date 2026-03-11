@@ -8,10 +8,10 @@ use CodeIgniter\Model;
 class P2TLModel extends Model
 {
     protected $table = 'trn_p2tl';
-    protected $primaryKey = 'no_agenda';
+    protected $primaryKey = 'noagenda';
     protected $returnType = 'array';
     protected $allowedFields = [
-        'no_agenda',
+        'noagenda',
         'idpel',
         'nama',
         'gol',
@@ -849,18 +849,31 @@ SQL;
         }
 
         $this->db->transStart();
-        foreach ($rows as $row) {
-            $agenda = (string) ($row['no_agenda'] ?? '');
+        $insertedCount = 0;
+        $errors = [];
+
+        foreach ($rows as $idx => $row) {
+            $agenda = (string) ($row['noagenda'] ?? '');
             if ($agenda === '') {
                 continue;
             }
 
-            $this->db->table('trn_p2tl')->replace($row);
+            try {
+                $this->db->table('trn_p2tl')->replace($row);
+                $insertedCount++;
+            } catch (\Throwable $e) {
+                $errors[] = 'Row ' . ($idx + 1) . ' (agenda: ' . $agenda . '): ' . $e->getMessage();
+            }
         }
+
         $this->db->transComplete();
 
         if (! $this->db->transStatus()) {
-            throw new \RuntimeException('Gagal menyimpan data P2TL.');
+            $errMsg = 'Gagal menyimpan data P2TL';
+            if ($errors !== []) {
+                $errMsg .= '. ' . implode(' | ', array_slice($errors, 0, 3));
+            }
+            throw new \RuntimeException($errMsg);
         }
     }
 

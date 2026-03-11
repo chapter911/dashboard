@@ -253,14 +253,17 @@ class C_P2TL extends BaseController
 
     public function importData(): RedirectResponse
     {
+        @ini_set('max_execution_time', '300');
+        @set_time_limit(300);
+
         $file = $this->request->getFile('file_import');
         if (! $file || ! $file->isValid() || $file->hasMoved()) {
-            return redirect()->to(site_url('C_P2TL/DataPemakaian'))->with('error', 'File upload tidak valid.');
+            return redirect()->to(site_url('C_P2TL/dataP2TL'))->with('error', 'File upload tidak valid.');
         }
 
         $extension = strtolower((string) $file->getClientExtension());
         if (! in_array($extension, ['xls', 'xlsx'], true)) {
-            return redirect()->to(site_url('C_P2TL/DataPemakaian'))->with('error', 'Format file harus .xls atau .xlsx.');
+            return redirect()->to(site_url('C_P2TL/dataP2TL'))->with('error', 'Format file harus .xls atau .xlsx.');
         }
 
         $tempName = $file->getRandomName();
@@ -273,6 +276,11 @@ class C_P2TL extends BaseController
 
             $payload = [];
             $username = (string) (session('username') ?? 'system');
+            $totalRows = count($rows);
+            $processedRows = 0;
+            $skippedEmpty = 0;
+            $skippedP4 = 0;
+
             foreach ($rows as $i => $r) {
                 if ($i < 8) {
                     continue;
@@ -280,18 +288,20 @@ class C_P2TL extends BaseController
 
                 $agenda = trim((string) ($r[1] ?? ''));
                 if ($agenda === '') {
+                    $skippedEmpty++;
                     continue;
                 }
 
                 $kwhRaw = $this->toNumber($r[11] ?? null);
                 $gol = trim((string) ($r[7] ?? ''));
                 if ($gol === 'P4' && $kwhRaw <= 0) {
+                    $skippedP4++;
                     continue;
                 }
 
                 $nomorRegister = trim((string) ($r[30] ?? ''));
                 $payload[] = [
-                    'no_agenda' => $agenda,
+                    'noagenda' => $agenda,
                     'idpel' => trim((string) ($r[3] ?? '')),
                     'nama' => trim((string) ($r[4] ?? '')),
                     'gol' => $gol,
@@ -318,19 +328,35 @@ class C_P2TL extends BaseController
                     'upload_by' => $username,
                     'upload_date' => date('Y-m-d H:i:s'),
                 ];
+                $processedRows++;
+            }
+
+            if ($payload === []) {
+                log_message('warning', 'P2TL_IMPORT_NO_VALID_DATA: Total {total}, Skipped empty {empty}, Skipped P4 {p4}', [
+                    'total' => $totalRows,
+                    'empty' => $skippedEmpty,
+                    'p4' => $skippedP4,
+                ]);
+                return redirect()->to(site_url('C_P2TL/dataP2TL'))->with('error', 'Tidak ada data valid untuk diimport. Total baris: ' . $totalRows . ', Kosong: ' . $skippedEmpty . ', P4 skip: ' . $skippedP4);
             }
 
             $this->p2tlModel->upsertP2TLByAgenda($payload);
+
+            log_message('info', 'P2TL_IMPORT_SUCCESS: Total {total}, Processed {processed}, Saved {count}', [
+                'total' => $totalRows,
+                'processed' => $processedRows,
+                'count' => count($payload),
+            ]);
         } catch (Throwable $e) {
             log_message('error', 'P2TL_IMPORT_DATA_FAILED: {message}', ['message' => $e->getMessage()]);
-            return redirect()->to(site_url('C_P2TL/DataPemakaian'))->with('error', 'Import data P2TL gagal diproses.');
+            return redirect()->to(site_url('C_P2TL/dataP2TL'))->with('error', 'Import data P2TL gagal diproses: ' . $e->getMessage());
         } finally {
             if (is_file($targetPath)) {
                 @unlink($targetPath);
             }
         }
 
-        return redirect()->to(site_url('C_P2TL/DataPemakaian'))->with('success', 'Data P2TL berhasil diimport.');
+        return redirect()->to(site_url('C_P2TL/dataP2TL'))->with('success', 'Data P2TL berhasil diimport. Diproses: ' . $processedRows . ', Disimpan: ' . count($payload) . '.');
     }
 
     public function dataP2TL(): string

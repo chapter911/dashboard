@@ -48,8 +48,9 @@
             <div class="col-md-1 d-flex align-items-end">
                 <button type="button" class="btn btn-secondary w-100" id="btnFilter">Filter</button>
             </div>
-            <div class="col-md-2 d-flex align-items-end">
-                <button type="button" class="btn btn-primary w-100" data-bs-toggle="modal" data-bs-target="#modalImportAnalisa">Upload Analisa</button>
+            <div class="col-md-2 d-flex align-items-end gap-2">
+                <button type="button" class="btn btn-primary w-100" data-bs-toggle="modal" data-bs-target="#modalImportData">Import Data</button>
+                <!-- <button type="button" class="btn btn-primary w-100" data-bs-toggle="modal" data-bs-target="#modalImportAnalisa">Upload Analisa</button> -->
             </div>
         </div>
 
