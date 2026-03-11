@@ -6,6 +6,8 @@ use App\Models\LaporanModel;
 use CodeIgniter\Database\BaseConnection;
 use CodeIgniter\HTTP\RedirectResponse;
 use CodeIgniter\HTTP\ResponseInterface;
+use PhpOffice\PhpSpreadsheet\IOFactory;
+use PhpOffice\PhpSpreadsheet\Shared\Date as SpreadsheetDate;
 use Throwable;
 
 class C_Laporan extends BaseController
@@ -266,24 +268,9 @@ class C_Laporan extends BaseController
         }
 
         $extension = strtolower((string) $file->getClientExtension());
-        if (! in_array($extension, ['csv', 'txt'], true)) {
-            return redirect()->to('/C_Laporan/Harian')->with('error', 'Hanya file CSV/TXT yang didukung di project ini.');
+        if (! in_array($extension, ['csv', 'txt', 'xls', 'xlsx'], true)) {
+            return redirect()->to('/C_Laporan/Harian')->with('error', 'Format file harus .csv, .txt, .xls, atau .xlsx.');
         }
-
-        $handle = fopen($file->getTempName(), 'r');
-        if (! $handle) {
-            return redirect()->to('/C_Laporan/Harian')->with('error', 'Gagal membaca file upload.');
-        }
-
-        $firstLine = fgets($handle);
-        if ($firstLine === false) {
-            fclose($handle);
-
-            return redirect()->to('/C_Laporan/Harian')->with('error', 'File CSV kosong atau tidak dapat dibaca.');
-        }
-
-        $delimiter = substr_count($firstLine, ';') >= substr_count($firstLine, ',') ? ';' : ',';
-        rewind($handle);
 
         $inserted = 0;
         $updated = 0;
@@ -303,7 +290,34 @@ class C_Laporan extends BaseController
         ];
 
         try {
-            while (($row = fgetcsv($handle, 0, $delimiter)) !== false) {
+            $rows = [];
+            if (in_array($extension, ['xls', 'xlsx'], true)) {
+                $spreadsheet = IOFactory::load($file->getTempName());
+                $rows = $spreadsheet->getActiveSheet()->toArray(null, true, false, false);
+            } else {
+                $handle = fopen($file->getTempName(), 'r');
+                if (! $handle) {
+                    return redirect()->to('/C_Laporan/Harian')->with('error', 'Gagal membaca file upload.');
+                }
+
+                $firstLine = fgets($handle);
+                if ($firstLine === false) {
+                    fclose($handle);
+
+                    return redirect()->to('/C_Laporan/Harian')->with('error', 'File CSV kosong atau tidak dapat dibaca.');
+                }
+
+                $delimiter = substr_count($firstLine, ';') >= substr_count($firstLine, ',') ? ';' : ',';
+                rewind($handle);
+
+                while (($csvRow = fgetcsv($handle, 0, $delimiter)) !== false) {
+                    $rows[] = $csvRow;
+                }
+
+                fclose($handle);
+            }
+
+            foreach ($rows as $row) {
                 if (! is_array($row) || $row === []) {
                     continue;
                 }
@@ -347,13 +361,10 @@ class C_Laporan extends BaseController
                 }
             }
         } catch (Throwable $e) {
-            fclose($handle);
             log_message('error', 'LAPORAN_HARIAN_IMPORT_FAILED: {message}', ['message' => $e->getMessage()]);
 
-            return redirect()->to('/C_Laporan/Harian')->with('error', 'Gagal import data CSV laporan harian.');
+            return redirect()->to('/C_Laporan/Harian')->with('error', 'Gagal import data laporan harian.');
         }
-
-        fclose($handle);
 
         return redirect()->to('/C_Laporan/Harian')->with('success', 'Import selesai. Insert: ' . $inserted . ', Update: ' . $updated . '.');
     }
@@ -900,6 +911,17 @@ class C_Laporan extends BaseController
     {
         if ($value === null) {
             return null;
+        }
+
+        if (is_numeric($value)) {
+            $excelSerial = (float) $value;
+            if ($excelSerial > 0) {
+                try {
+                    return SpreadsheetDate::excelToDateTimeObject($excelSerial)->format('Y-m-d');
+                } catch (Throwable $e) {
+                    // Continue to string parsing fallback below.
+                }
+            }
         }
 
         $raw = trim((string) $value);

@@ -184,8 +184,8 @@ $filters = is_array($filters ?? null) ? $filters : [];
                     <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
                 <div class="modal-body">
-                    <div class="mb-2">File yang didukung: <strong>CSV/TXT delimiter titik-koma (;)</strong>.</div>
-                    <input type="file" class="form-control" name="file_import" accept=".csv,.txt" required>
+                    <div class="mb-2">File yang didukung: <strong>CSV, TXT, XLS, XLSX</strong>.</div>
+                    <input type="file" class="form-control" name="file_import" accept=".csv,.txt,.xls,.xlsx" required>
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-label-secondary" data-bs-dismiss="modal">Batal</button>
