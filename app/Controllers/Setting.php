@@ -72,7 +72,11 @@ class Setting extends BaseController
             if (! is_file($filePath) || ! is_readable($filePath)) {
                 return $this->response->setStatusCode(404)->setBody('File not found.');
             }
-            $content = file_get_contents($filePath);
+            $content = $this->readLogTail($filePath, 1024 * 1024);
+            if ($content === '') {
+                return $this->response->setStatusCode(404)->setBody('File kosong atau tidak dapat dibaca.');
+            }
+
             return $this->response->setHeader('Content-Type', 'text/plain')->setBody($content);
         }
 
@@ -107,8 +111,7 @@ class Setting extends BaseController
                 continue;
             }
 
-            $content = @file_get_contents($path);
-            if (! is_string($content) || strpos($content, 'ERROR -') === false) {
+            if (! $this->containsErrorEntry($path)) {
                 continue;
             }
 
@@ -129,6 +132,58 @@ class Setting extends BaseController
         }
 
         return $result;
+    }
+
+    private function containsErrorEntry(string $filePath): bool
+    {
+        $handle = @fopen($filePath, 'rb');
+        if ($handle === false) {
+            return false;
+        }
+
+        try {
+            while (! feof($handle)) {
+                $line = fgets($handle);
+                if ($line === false) {
+                    continue;
+                }
+
+                if (strpos($line, 'ERROR -') !== false) {
+                    return true;
+                }
+            }
+        } finally {
+            fclose($handle);
+        }
+
+        return false;
+    }
+
+    private function readLogTail(string $filePath, int $maxBytes = 1048576): string
+    {
+        $size = @filesize($filePath);
+        if (! is_int($size) || $size <= 0) {
+            return '';
+        }
+
+        $offset = max(0, $size - max(1, $maxBytes));
+        $handle = @fopen($filePath, 'rb');
+        if ($handle === false) {
+            return '';
+        }
+
+        try {
+            if ($offset > 0) {
+                fseek($handle, $offset);
+                // Drop partial first line when reading from the middle of file.
+                fgets($handle);
+            }
+
+            $content = stream_get_contents($handle);
+            return is_string($content) ? $content : '';
+        } finally {
+            fclose($handle);
+        }
     }
 
     public function update()
