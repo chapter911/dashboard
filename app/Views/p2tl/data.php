@@ -8,19 +8,30 @@
     vertical-align: middle;
     border: 1px solid #fff !important;
 }
-#tableDataPemakaian tbody td,
-#tableDataPemakaian tbody td:nth-child(n+4) {
+#tableDataPemakaian tbody td {
+    white-space: nowrap;
+}
+#tableDataPemakaian tbody td:nth-child(2),
+#tableDataPemakaian tbody td:nth-child(3),
+#tableDataPemakaian tbody td:nth-child(4),
+#tableDataPemakaian tbody td:nth-child(5),
+#tableDataPemakaian tbody td:nth-child(6) {
+    text-align: left;
+}
+#tableDataPemakaian tbody td:nth-child(n+7):nth-child(-n+20) {
     text-align: right;
 }
 #tableDataPemakaian tbody td:nth-child(1),
-#tableDataPemakaian tbody td:nth-child(2),
-#tableDataPemakaian tbody td:nth-child(3) {
-    text-align: left;
+#tableDataPemakaian tbody td:nth-child(21),
+#tableDataPemakaian tbody td:nth-child(22),
+#tableDataPemakaian tbody td:nth-child(23),
+#tableDataPemakaian tbody td:nth-child(24) {
+    text-align: center;
 }
 </style>
 <div class="card">
     <div class="card-header">
-        <h5 class="mb-0"><?= esc($pageHeading ?? 'Data Pemakaian Analisa') ?></h5>
+        <h5 class="mb-0"><?= esc($pageHeading ?? 'Data P2TL') ?></h5>
     </div>
     <div class="card-body">
         <div class="row g-3 mb-3">
@@ -58,23 +69,36 @@
             <table id="tableDataPemakaian" class="table table-sm table-striped w-100">
                 <thead>
                     <tr>
-                        <th>IDPEL</th>
-                        <th>TARIF</th>
-                        <th>NOMOR GARDU</th>
-                        <th>DAYA</th>
-                        <th>TAHUN</th>
-                        <th>JAN</th>
-                        <th>FEB</th>
-                        <th>MAR</th>
-                        <th>APR</th>
-                        <th>MEI</th>
-                        <th>JUN</th>
-                        <th>JUL</th>
-                        <th>AGT</th>
-                        <th>SEP</th>
-                        <th>OKT</th>
-                        <th>NOV</th>
-                        <th>DES</th>
+                        <th rowspan="2">NO</th>
+                        <th rowspan="2">NOAGENDA</th>
+                        <th rowspan="2">IDPEL</th>
+                        <th rowspan="2">NAMA</th>
+                        <th rowspan="2">GOL</th>
+                        <th rowspan="2">ALAMAT</th>
+                        <th rowspan="2">DAYA</th>
+                        <th rowspan="2">KWH</th>
+                        <th colspan="3">TAGIHAN SUSULAN</th>
+                        <th colspan="6">RUPIAH BIAYA LAIN-LAIN</th>
+                        <th colspan="3">RUPIAH</th>
+                        <th colspan="4">PENETAPAN</th>
+                    </tr>
+                    <tr>
+                        <th>BEBAN</th>
+                        <th>KWH</th>
+                        <th>TS</th>
+                        <th>MATERAI</th>
+                        <th>SEGEL</th>
+                        <th>MATERIA</th>
+                        <th>RPPPJ</th>
+                        <th>RPUJL</th>
+                        <th>RPPPN</th>
+                        <th>TOTAL</th>
+                        <th>TUNAI</th>
+                        <th>ANGSURAN</th>
+                        <th>TANGGAL REGISTER</th>
+                        <th>NOMOR REGISTER</th>
+                        <th>TANGGAL SPH</th>
+                        <th>NOMOR SPH</th>
                     </tr>
                 </thead>
             </table>
@@ -207,11 +231,18 @@
             { data: 13, defaultContent: '' },
             { data: 14, defaultContent: '' },
             { data: 15, defaultContent: '' },
-            { data: 16, defaultContent: '' }
+            { data: 16, defaultContent: '' },
+            { data: 17, defaultContent: '' },
+            { data: 18, defaultContent: '' },
+            { data: 19, defaultContent: '' },
+            { data: 20, defaultContent: '' },
+            { data: 21, defaultContent: '' },
+            { data: 22, defaultContent: '' },
+            { data: 23, defaultContent: '' }
         ],
         columnDefs: [
-            { className: 'text-end', targets: [3, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] },
-            { className: 'text-center', targets: [4] }
+            { className: 'text-center', targets: [0, 20, 21, 22, 23] },
+            { className: 'text-end', targets: [6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19] }
         ],
         ajax: {
             url: '<?= site_url('C_P2TL/ajaxDataPemakaian') ?>',
@@ -246,7 +277,7 @@
                 Swal.fire('Error', 'Gagal mengambil data (' + (xhr && xhr.status ? xhr.status : 'unknown') + ').', 'error');
             }
         },
-        order: [[0, 'asc']],
+        order: [[20, 'desc'], [1, 'desc']],
         pageLength: 10
     });
 
@@ -262,7 +293,7 @@
     });
     $('#btnFilter').on('click', function () { window.getData(); });
 
-    $('#formImportData, #formImportAnalisa').on('submit', function () {
+    $('#formImportData').on('submit', function () {
         applyCsrf(csrfToken);
         Swal.fire({ title: 'Mohon Tunggu', html: 'Proses import berlangsung', allowOutsideClick: false, showConfirmButton: false, didOpen: function(){ Swal.showLoading(); } });
     });

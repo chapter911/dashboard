@@ -363,12 +363,12 @@ class C_P2TL extends BaseController
     {
         $isAdmin = (int) (session('group_id') ?? 0) === 1;
         $userUnitId = session('unit_id') !== null ? (int) session('unit_id') : null;
-        $years = $this->p2tlModel->getAvailableAnalisaYears($isAdmin, $userUnitId);
+        $years = $this->p2tlModel->getAvailableP2TLYears($isAdmin, $userUnitId);
         $currentYear = $years[0] ?? (int) date('Y');
 
         return view('p2tl/data', [
-            'title' => 'Data Pemakaian Analisa',
-            'pageHeading' => 'Data Pemakaian Analisa',
+            'title' => 'Data P2TL',
+            'pageHeading' => 'Data P2TL',
             'units' => $this->p2tlModel->getUnits(),
             'currentYear' => $currentYear,
             'years' => $years,
@@ -401,39 +401,34 @@ class C_P2TL extends BaseController
 
         $result = $this->p2tlModel->getDataPemakaianDatatable($filters, $start, $length, $search, $isAdmin, $userUnitId);
 
-        $normalizeIntValue = static function (mixed $value): int {
-            $raw = is_numeric($value) ? (float) $value : 0.0;
-
-            // Guard against accidentally persisted values in x1000 scale.
-            if ($raw >= 100000 && fmod($raw, 1000.0) === 0.0) {
-                $raw /= 1000.0;
-            }
-
-            return (int) round($raw);
-        };
-
         $data = [];
+        $no = $start + 1;
         foreach ($result['rows'] as $row) {
-            $dayaValue = $normalizeIntValue($row['daya'] ?? 0);
-
             $data[] = [
+                (string) $no++,
+                (string) ($row['noagenda'] ?? ''),
                 (string) ($row['idpel'] ?? ''),
-                (string) ($row['tarif'] ?? ''),
-                (string) ($row['nomor_gardu'] ?? ''),
-                (string) $dayaValue,
-                (string) ($row['tahun'] ?? ''),
-                (string) $normalizeIntValue($row['januari'] ?? 0),
-                (string) $normalizeIntValue($row['februari'] ?? 0),
-                (string) $normalizeIntValue($row['maret'] ?? 0),
-                (string) $normalizeIntValue($row['april'] ?? 0),
-                (string) $normalizeIntValue($row['mei'] ?? 0),
-                (string) $normalizeIntValue($row['juni'] ?? 0),
-                (string) $normalizeIntValue($row['juli'] ?? 0),
-                (string) $normalizeIntValue($row['agustus'] ?? 0),
-                (string) $normalizeIntValue($row['september'] ?? 0),
-                (string) $normalizeIntValue($row['oktober'] ?? 0),
-                (string) $normalizeIntValue($row['november'] ?? 0),
-                (string) $normalizeIntValue($row['desember'] ?? 0),
+                (string) ($row['nama'] ?? ''),
+                (string) ($row['gol'] ?? ''),
+                (string) ($row['alamat'] ?? ''),
+                number_format((float) ($row['daya'] ?? 0), 0, ',', '.'),
+                number_format((float) ($row['kwh'] ?? 0), 0, ',', '.'),
+                number_format((float) ($row['tagihan_beban'] ?? 0), 0, ',', '.'),
+                number_format((float) ($row['tagihan_kwh'] ?? 0), 0, ',', '.'),
+                number_format((float) ($row['tagihan_ts'] ?? 0), 0, ',', '.'),
+                number_format((float) ($row['materai'] ?? 0), 0, ',', '.'),
+                number_format((float) ($row['segel'] ?? 0), 0, ',', '.'),
+                number_format((float) ($row['materia'] ?? 0), 0, ',', '.'),
+                number_format((float) ($row['rpppj'] ?? 0), 0, ',', '.'),
+                number_format((float) ($row['rpujl'] ?? 0), 0, ',', '.'),
+                number_format((float) ($row['rpppn'] ?? 0), 0, ',', '.'),
+                number_format((float) ($row['rupiah_total'] ?? 0), 0, ',', '.'),
+                number_format((float) ($row['rupiah_tunai'] ?? 0), 0, ',', '.'),
+                number_format((float) ($row['rupiah_angsuran'] ?? 0), 0, ',', '.'),
+                (string) ($row['tanggal_register'] ?? ''),
+                (string) ($row['nomor_register'] ?? ''),
+                (string) ($row['tanggal_sph'] ?? ''),
+                (string) ($row['nomor_sph'] ?? ''),
             ];
         }
 

@@ -80,6 +80,32 @@ class P2TLModel extends Model
     }
 
     /**
+     * @return list<int>
+     */
+    public function getAvailableP2TLYears(bool $isAdmin, ?int $userUnitId): array
+    {
+        $builder = $this->db->table('trn_p2tl p')
+            ->select('DISTINCT YEAR(p.tanggal_register) AS tahun', false)
+            ->where('p.tanggal_register IS NOT NULL', null, false)
+            ->orderBy('tahun', 'DESC');
+
+        if (! $isAdmin && $userUnitId !== null) {
+            $builder->where('p.unit_id', (string) $userUnitId);
+        }
+
+        $rows = $builder->get()->getResultArray();
+        $years = [];
+        foreach ($rows as $row) {
+            $year = (int) ($row['tahun'] ?? 0);
+            if ($year > 0) {
+                $years[] = $year;
+            }
+        }
+
+        return $years;
+    }
+
+    /**
      * @return list<array<string, mixed>>
      */
     public function getAkumulasiTahunan(string $startDate, string $endDate, string $golongan = '*', string $sortir = '1'): array
@@ -305,103 +331,74 @@ SQL;
         $unit = (string) ($filters['unit'] ?? '*');
         $idpel = trim((string) ($filters['idpel'] ?? ''));
 
-        $periodStart = sprintf('%04d-01-01', $year);
-        $periodEnd = sprintf('%04d-01-01', $year + 1);
+        $fromSql = ' FROM trn_p2tl p WHERE 1=1';
+        $binds = [];
 
-        $unitWhere = '';
-        $binds = [$periodStart, $periodEnd];
+        if ($year > 0) {
+            $fromSql .= ' AND YEAR(p.tanggal_register) = ?';
+            $binds[] = $year;
+        }
 
         if (! $isAdmin && $userUnitId !== null) {
-            $unitWhere = ' AND a.unit_id = ?';
+            $fromSql .= ' AND p.unit_id = ?';
             $binds[] = $userUnitId;
         } elseif ($unit !== '' && $unit !== '*') {
-            $unitWhere = ' AND a.unit_id = ?';
+            $fromSql .= ' AND p.unit_id = ?';
             $binds[] = (int) $unit;
         }
 
-        $countBaseSql = "SELECT
-                a.idpel,
-                a.tarif,
-                CASE
-                    WHEN MAX(a.daya) >= 100000 AND MOD(MAX(a.daya), 1000) = 0 THEN MAX(a.daya) / 1000
-                    ELSE MAX(a.daya)
-                END AS daya,
-                YEAR(a.periode) AS tahun
-            FROM trn_p2tl_analisa a
-            WHERE a.periode >= ? AND a.periode < ?{$unitWhere}
-            GROUP BY a.idpel, a.tarif, YEAR(a.periode)";
-
-        $analisaSql = "SELECT
-                a.idpel,
-                a.tarif,
-                CASE
-                    WHEN MAX(a.daya) >= 100000 AND MOD(MAX(a.daya), 1000) = 0 THEN MAX(a.daya) / 1000
-                    ELSE MAX(a.daya)
-                END AS daya,
-                YEAR(a.periode) AS tahun,
-                SUM(CASE WHEN MONTH(a.periode) = 1 THEN a.pemakaian_kwh END) AS januari,
-                SUM(CASE WHEN MONTH(a.periode) = 2 THEN a.pemakaian_kwh END) AS februari,
-                SUM(CASE WHEN MONTH(a.periode) = 3 THEN a.pemakaian_kwh END) AS maret,
-                SUM(CASE WHEN MONTH(a.periode) = 4 THEN a.pemakaian_kwh END) AS april,
-                SUM(CASE WHEN MONTH(a.periode) = 5 THEN a.pemakaian_kwh END) AS mei,
-                SUM(CASE WHEN MONTH(a.periode) = 6 THEN a.pemakaian_kwh END) AS juni,
-                SUM(CASE WHEN MONTH(a.periode) = 7 THEN a.pemakaian_kwh END) AS juli,
-                SUM(CASE WHEN MONTH(a.periode) = 8 THEN a.pemakaian_kwh END) AS agustus,
-                SUM(CASE WHEN MONTH(a.periode) = 9 THEN a.pemakaian_kwh END) AS september,
-                SUM(CASE WHEN MONTH(a.periode) = 10 THEN a.pemakaian_kwh END) AS oktober,
-                SUM(CASE WHEN MONTH(a.periode) = 11 THEN a.pemakaian_kwh END) AS november,
-                SUM(CASE WHEN MONTH(a.periode) = 12 THEN a.pemakaian_kwh END) AS desember
-            FROM trn_p2tl_analisa a
-            WHERE a.periode >= ? AND a.periode < ?{$unitWhere}
-            GROUP BY a.idpel, a.tarif, YEAR(a.periode)";
-
-        $countSqlBaseWrapped = 'SELECT * FROM (' . $countBaseSql . ') x';
-        $dataSqlBaseWrapped = 'SELECT * FROM (' . $analisaSql . ') x';
-
-        $fixedWhere = '';
-        $fixedWhereBinds = [];
         if ($idpel !== '') {
-            $fixedWhere .= ($fixedWhere === '' ? ' WHERE ' : ' AND ') . 'x.idpel LIKE ?';
-            $fixedWhereBinds[] = '%' . $idpel . '%';
+            $fromSql .= ' AND p.idpel LIKE ?';
+            $binds[] = '%' . $idpel . '%';
         }
+
+        $totalSql = 'SELECT COUNT(*) AS total' . $fromSql;
+        $total = (int) ($this->db->query($totalSql, $binds)->getRowArray()['total'] ?? 0);
 
         $searchValue = trim((string) $search);
-        $searchWhere = '';
-        $searchWhereBinds = [];
+        $searchSql = '';
+        $searchBinds = [];
         if ($searchValue !== '') {
-            $searchWhere = ($fixedWhere === '' ? ' WHERE ' : ' AND ') . '(x.idpel LIKE ? OR x.tarif LIKE ? OR CAST(x.daya AS CHAR) LIKE ? OR CAST(x.tahun AS CHAR) LIKE ? OR EXISTS (SELECT 1 FROM mst_data_induk_langganan mg WHERE mg.idpel = x.idpel AND mg.nomor_gardu LIKE ?))';
-            $searchWhereBinds[] = '%' . $searchValue . '%';
-            $searchWhereBinds[] = '%' . $searchValue . '%';
-            $searchWhereBinds[] = '%' . $searchValue . '%';
-            $searchWhereBinds[] = '%' . $searchValue . '%';
-            $searchWhereBinds[] = '%' . $searchValue . '%';
+            $searchSql = ' AND (p.noagenda LIKE ? OR p.idpel LIKE ? OR p.nama LIKE ? OR p.gol LIKE ? OR p.alamat LIKE ? OR p.nomor_sph LIKE ?)';
+            $searchBinds = array_fill(0, 6, '%' . $searchValue . '%');
         }
-
-        $totalSql = 'SELECT COUNT(*) AS total FROM (' . $countSqlBaseWrapped . ') x' . $fixedWhere;
-        $total = (int) ($this->db->query($totalSql, array_merge($binds, $fixedWhereBinds))->getRowArray()['total'] ?? 0);
 
         $filtered = $total;
-        if ($searchWhere !== '') {
-            $filteredSql = 'SELECT COUNT(*) AS total FROM (' . $countSqlBaseWrapped . ') x' . $fixedWhere . $searchWhere;
-            $filtered = (int) ($this->db->query($filteredSql, array_merge($binds, $fixedWhereBinds, $searchWhereBinds))->getRowArray()['total'] ?? 0);
+        if ($searchSql !== '') {
+            $filteredSql = 'SELECT COUNT(*) AS total' . $fromSql . $searchSql;
+            $filtered = (int) ($this->db->query($filteredSql, array_merge($binds, $searchBinds))->getRowArray()['total'] ?? 0);
         }
 
-        $orderBy = 'x.idpel ASC';
-        $dataSql = 'SELECT * FROM (' . $dataSqlBaseWrapped . ') x' . $fixedWhere . $searchWhere . ' ORDER BY ' . $orderBy;
+        $dataSql = 'SELECT
+                p.noagenda,
+                p.idpel,
+                p.nama,
+                p.gol,
+                p.alamat,
+                p.daya,
+                p.kwh,
+                p.tagihan_beban,
+                p.tagihan_kwh,
+                p.tagihan_ts,
+                p.materai,
+                p.segel,
+                p.materia,
+                p.rpppj,
+                p.rpujl,
+                p.rpppn,
+                p.rupiah_total,
+                p.rupiah_tunai,
+                p.rupiah_angsuran,
+                p.tanggal_register,
+                p.nomor_register,
+                p.tanggal_sph,
+                p.nomor_sph' . $fromSql . $searchSql . ' ORDER BY p.tanggal_register DESC, p.noagenda DESC';
+
         if ($length > 0) {
             $dataSql .= ' LIMIT ' . (int) $start . ', ' . (int) $length;
         }
 
-        $rows = $this->db->query($dataSql, array_merge($binds, $fixedWhereBinds, $searchWhereBinds))->getResultArray();
-
-        $idpels = array_values(array_unique(array_filter(array_map(static fn (array $row): string => (string) ($row['idpel'] ?? ''), $rows))));
-        $nomorGarduByIdpel = $this->getLatestNomorGarduByIdpels($idpels);
-
-        foreach ($rows as &$row) {
-            $idpelKey = (string) ($row['idpel'] ?? '');
-            $row['nomor_gardu'] = $nomorGarduByIdpel[$idpelKey] ?? '';
-        }
-        unset($row);
+        $rows = $this->db->query($dataSql, array_merge($binds, $searchBinds))->getResultArray();
 
         return [
             'rows' => $rows,
