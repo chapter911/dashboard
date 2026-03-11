@@ -50,6 +50,7 @@ class Setting extends BaseController
             'shellExecAvailable' => $this->isShellFunctionEnabled('exec'),
             'seederOptions' => $this->getSeederOptionsPayload(),
             'syncTableOptions' => $this->getSyncTableOptions(),
+            'errorLogFiles' => $this->getRecentErrorLogFiles(3),
             'formData' => [
                 'app_name' => old('app_name', $appName),
                 'app_primary_color' => old('app_primary_color', $primaryColor),
@@ -62,17 +63,73 @@ class Setting extends BaseController
         {
             $filename = $this->request->getGet('file');
             $logDir = WRITEPATH . 'logs';
-            $allowed = ['log-2026-03-09.log', 'log-2026-03-08.log', 'log-2026-03-07.log', 'log-2026-03-06.log'];
-            if (!$filename || !in_array($filename, $allowed, true)) {
+            $allowed = $this->getRecentErrorLogFiles(3);
+            if (! is_string($filename) || ! in_array($filename, $allowed, true)) {
                 return $this->response->setStatusCode(404)->setBody('File not found.');
             }
-            $filePath = $logDir . DIRECTORY_SEPARATOR . $filename;
-            if (!file_exists($filePath)) {
+            $safeFilename = basename($filename);
+            $filePath = $logDir . DIRECTORY_SEPARATOR . $safeFilename;
+            if (! is_file($filePath) || ! is_readable($filePath)) {
                 return $this->response->setStatusCode(404)->setBody('File not found.');
             }
             $content = file_get_contents($filePath);
             return $this->response->setHeader('Content-Type', 'text/plain')->setBody($content);
         }
+
+    /**
+     * @return list<string>
+     */
+    private function getRecentErrorLogFiles(int $limit = 3): array
+    {
+        $logDir = WRITEPATH . 'logs';
+        if (! is_dir($logDir)) {
+            return [];
+        }
+
+        $entries = scandir($logDir);
+        if (! is_array($entries)) {
+            return [];
+        }
+
+        $candidates = [];
+        foreach ($entries as $entry) {
+            if (! is_string($entry)) {
+                continue;
+            }
+
+            // Accept only standard CI log filenames: log-YYYY-MM-DD.log
+            if (preg_match('/^log-\d{4}-\d{2}-\d{2}\.log$/', $entry) !== 1) {
+                continue;
+            }
+
+            $path = $logDir . DIRECTORY_SEPARATOR . $entry;
+            if (! is_file($path) || ! is_readable($path)) {
+                continue;
+            }
+
+            $content = @file_get_contents($path);
+            if (! is_string($content) || strpos($content, 'ERROR -') === false) {
+                continue;
+            }
+
+            $mtime = @filemtime($path);
+            $candidates[] = [
+                'name' => $entry,
+                'mtime' => is_int($mtime) ? $mtime : 0,
+            ];
+        }
+
+        usort($candidates, static function (array $a, array $b): int {
+            return $b['mtime'] <=> $a['mtime'];
+        });
+
+        $result = [];
+        foreach (array_slice($candidates, 0, max(1, $limit)) as $item) {
+            $result[] = (string) $item['name'];
+        }
+
+        return $result;
+    }
 
     public function update()
     {

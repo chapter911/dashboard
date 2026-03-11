@@ -13,6 +13,7 @@ $seederOptions = is_array($seederOptions ?? null) ? $seederOptions : ['pending' 
 $pendingSeeders = is_array($seederOptions['pending'] ?? null) ? $seederOptions['pending'] : [];
 $allSeeders = is_array($seederOptions['all'] ?? null) ? $seederOptions['all'] : [];
 $syncTableOptions = is_array($syncTableOptions ?? null) ? $syncTableOptions : [];
+$errorLogFiles = is_array($errorLogFiles ?? null) ? $errorLogFiles : [];
 ?>
 
 <div class="row">
@@ -31,12 +32,15 @@ $syncTableOptions = is_array($syncTableOptions ?? null) ? $syncTableOptions : []
                         <label for="logFileSelect" class="form-label">Pilih File Log</label>
                         <div class="input-group">
                             <select class="form-select" id="logFileSelect">
-                                <option value="log-2026-03-09.log">log-2026-03-09.log</option>
-                                <option value="log-2026-03-08.log">log-2026-03-08.log</option>
-                                <option value="log-2026-03-07.log">log-2026-03-07.log</option>
-                                <option value="log-2026-03-06.log">log-2026-03-06.log</option>
+                                <?php if ($errorLogFiles === []): ?>
+                                    <option value="">Tidak ada file log error</option>
+                                <?php else: ?>
+                                    <?php foreach ($errorLogFiles as $logFile): ?>
+                                        <option value="<?= esc((string) $logFile) ?>"><?= esc((string) $logFile) ?></option>
+                                    <?php endforeach; ?>
+                                <?php endif; ?>
                             </select>
-                            <button class="btn btn-outline-danger" id="btnShowLog" type="button">
+                            <button class="btn btn-outline-danger" id="btnShowLog" type="button" <?= $errorLogFiles === [] ? 'disabled' : '' ?>>
                                 <i class="ti ti-file-text me-1"></i> Tampilkan Log
                             </button>
                         </div>
@@ -64,6 +68,9 @@ $syncTableOptions = is_array($syncTableOptions ?? null) ? $syncTableOptions : []
             document.getElementById('btnShowLog').addEventListener('click', function() {
                 var select = document.getElementById('logFileSelect');
                 var filename = select.value;
+                if (!filename) {
+                    return;
+                }
                 var modal = new bootstrap.Modal(document.getElementById('logModal'));
                 var modalLabel = document.getElementById('logModalLabel');
                 var modalContent = document.getElementById('logModalContent');
