@@ -63,6 +63,7 @@ class LaporanModel extends Model
         'petugas_remaja',
         'petugas_batal',
         'tgl_rekap',
+        'tgl_import',
         'kd_pemb_meter',
         'ct_primer_kwh',
         'ct_sekunder_kwh',

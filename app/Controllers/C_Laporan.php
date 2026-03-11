@@ -275,6 +275,7 @@ class C_Laporan extends BaseController
         $inserted = 0;
         $updated = 0;
         $rowNumber = 0;
+        $importTimestamp = date('Y-m-d H:i:s');
 
         $dateColumns = [
             'tgl_pengaduan',
@@ -350,6 +351,8 @@ class C_Laporan extends BaseController
                 foreach ($dateColumns as $dateColumn) {
                     $payload[$dateColumn] = $this->toIsoDate($payload[$dateColumn] ?? null);
                 }
+
+                $payload['tgl_import'] = $importTimestamp;
 
                 $exists = $this->laporanModel->where('no_agenda', $payload['no_agenda'])->first();
                 if (is_array($exists)) {
