@@ -262,6 +262,9 @@ class C_Laporan extends BaseController
 
     public function importHarian(): RedirectResponse
     {
+        @ini_set('max_execution_time', '300');
+        @set_time_limit(300);
+
         $file = $this->request->getFile('file_import');
         if (! $file || ! $file->isValid() || $file->hasMoved()) {
             return redirect()->to('/C_Laporan/Harian')->with('error', 'File upload tidak valid.');
@@ -276,6 +279,7 @@ class C_Laporan extends BaseController
         $updated = 0;
         $rowNumber = 0;
         $importTimestamp = date('Y-m-d H:i:s');
+        $payloadByNoAgenda = [];
 
         $dateColumns = [
             'tgl_pengaduan',
@@ -353,15 +357,65 @@ class C_Laporan extends BaseController
                 }
 
                 $payload['tgl_import'] = $importTimestamp;
+                $payloadByNoAgenda[(string) $payload['no_agenda']] = $payload;
+            }
 
-                $exists = $this->laporanModel->where('no_agenda', $payload['no_agenda'])->first();
-                if (is_array($exists)) {
-                    $this->laporanModel->update((int) ($exists['id'] ?? 0), $payload);
-                    $updated++;
-                } else {
-                    $this->laporanModel->insert($payload, false);
-                    $inserted++;
+            if ($payloadByNoAgenda === []) {
+                return redirect()->to('/C_Laporan/Harian')->with('error', 'Tidak ada data valid untuk diimport.');
+            }
+
+            $allNoAgenda = array_keys($payloadByNoAgenda);
+            $existingMap = [];
+
+            foreach (array_chunk($allNoAgenda, 1000) as $agendaChunk) {
+                $existingRows = $this->db->table('laporan_harian')
+                    ->select('id, no_agenda')
+                    ->whereIn('no_agenda', $agendaChunk)
+                    ->get()
+                    ->getResultArray();
+
+                foreach ($existingRows as $existingRow) {
+                    $existingNoAgenda = (string) ($existingRow['no_agenda'] ?? '');
+                    $existingId = (int) ($existingRow['id'] ?? 0);
+                    if ($existingNoAgenda !== '' && $existingId > 0) {
+                        $existingMap[$existingNoAgenda] = $existingId;
+                    }
                 }
+            }
+
+            $insertRows = [];
+            $updateRows = [];
+
+            foreach ($payloadByNoAgenda as $noAgenda => $payload) {
+                if (isset($existingMap[$noAgenda])) {
+                    $payload['id'] = $existingMap[$noAgenda];
+                    $updateRows[] = $payload;
+                    continue;
+                }
+
+                $insertRows[] = $payload;
+            }
+
+            $this->db->transStart();
+
+            if ($insertRows !== []) {
+                foreach (array_chunk($insertRows, 500) as $insertChunk) {
+                    $this->laporanModel->insertBatch($insertChunk);
+                    $inserted += count($insertChunk);
+                }
+            }
+
+            if ($updateRows !== []) {
+                foreach (array_chunk($updateRows, 500) as $updateChunk) {
+                    $this->laporanModel->updateBatch($updateChunk, 'id');
+                    $updated += count($updateChunk);
+                }
+            }
+
+            $this->db->transComplete();
+
+            if (! $this->db->transStatus()) {
+                return redirect()->to('/C_Laporan/Harian')->with('error', 'Gagal menyimpan hasil import laporan harian.');
             }
         } catch (Throwable $e) {
             log_message('error', 'LAPORAN_HARIAN_IMPORT_FAILED: {message}', ['message' => $e->getMessage()]);

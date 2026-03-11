@@ -203,8 +203,17 @@ $filters = is_array($filters ?? null) ? $filters : [];
 <script>
     $(function () {
         var $form = $('#harianFilterForm');
+        var csrfName = '<?= esc(csrf_token()) ?>';
         var filterTimer = null;
         var swalActive = false;
+
+        var syncCsrfToken = function (tokenValue) {
+            if (! tokenValue) {
+                return;
+            }
+
+            $('input[name="' + csrfName + '"]').val(tokenValue);
+        };
 
         $('.select2').select2({
             width: '100%',
@@ -257,7 +266,7 @@ $filters = is_array($filters ?? null) ? $filters : [];
                     d.fasa = $form.find('select[name="fasa"]').val();
                     d.tgl_peremajaan = $form.find('input[name="tgl_peremajaan"]').val();
                     d.search = '';
-                    d['<?= esc(csrf_token()) ?>'] = $form.find('input[name="<?= esc(csrf_token()) ?>"]').val();
+                    d[csrfName] = $form.find('input[name="' + csrfName + '"]').val();
                 },
                 dataSrc: function (json) {
                     return json.data || [];
@@ -349,9 +358,7 @@ $filters = is_array($filters ?? null) ? $filters : [];
 
         $('#harianTable').on('xhr.dt', function (_e, _settings, _json, xhr) {
             var freshCsrf = xhr ? xhr.getResponseHeader('X-CSRF-TOKEN') : null;
-            if (freshCsrf) {
-                $form.find('input[name="<?= esc(csrf_token()) ?>"]').val(freshCsrf);
-            }
+            syncCsrfToken(freshCsrf);
             hideLoading();
         });
 
