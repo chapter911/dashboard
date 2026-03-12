@@ -734,9 +734,8 @@ class C_P2TL extends BaseController
 
         if ($idpel === '') {
             return $this->response->setJSON([
-                'labels' => ['Periode 1', 'Periode 2', 'Periode 3'],
+                'labels' => ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'],
                 'datasets' => [],
-                'period_highlights' => [],
             ]);
         }
 
@@ -747,95 +746,36 @@ class C_P2TL extends BaseController
         $unitFilter = ($unit !== '' && $unit !== '*') ? (int) $unit : null;
 
         $chartSeries = $this->p2tlModel->getAnalisaGrafikByIdpelRange($idpel, $tahunAcuan, $tahunMulai, $isAdmin, $userUnitId, $unitFilter);
-        $continuousSeries = [];
-        for ($year = $tahunMulai; $year <= $tahunAcuan; $year++) {
-            $yearSeries = $chartSeries[$year] ?? array_fill(0, 12, null);
-            foreach ($yearSeries as $value) {
-                $continuousSeries[] = $value !== null ? (float) $value : null;
-            }
-        }
+        $labels = ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];
 
-        $calculateAverage = static function (array $series, int $startIndex, int $endIndex): ?float {
-            if ($startIndex < 0 || $endIndex >= count($series)) {
-                return null;
-            }
-
-            $total = 0.0;
-            $count = 0;
-            for ($i = $startIndex; $i <= $endIndex; $i++) {
-                if ($series[$i] === null) {
-                    return null;
-                }
-
-                $total += (float) $series[$i];
-                $count++;
-            }
-
-            return $count > 0 ? ($total / $count) : null;
-        };
-
-        $buildPeriodDateRange = static function (int $startIndex, int $endIndex, int $startYear): ?array {
-            if ($startIndex < 0 || $endIndex < $startIndex) {
-                return null;
-            }
-
-            $startMonth = ($startIndex % 12) + 1;
-            $endMonth = ($endIndex % 12) + 1;
-            $rangeStartYear = $startYear + intdiv($startIndex, 12);
-            $rangeEndYear = $startYear + intdiv($endIndex, 12);
-
-            $startDate = sprintf('%04d-%02d-01', $rangeStartYear, $startMonth);
-            $endDate = date('Y-m-t', strtotime(sprintf('%04d-%02d-01', $rangeEndYear, $endMonth)));
-
-            return [
-                'start_date' => $startDate,
-                'end_date' => $endDate,
-            ];
-        };
-
-        // Keep chart periods aligned to full calendar years:
-        // Periode 1 = Jan-Des tahun acuan, Periode 2 = Jan-Des tahun acuan-1, Periode 3 = Jan-Des tahun acuan-2.
-        $periodWindows = [
-            ['label' => 'Periode 1', 'start' => 24, 'end' => 35],
-            ['label' => 'Periode 2', 'start' => 12, 'end' => 23],
-            ['label' => 'Periode 3', 'start' => 0, 'end' => 11],
+        $periodMeta = [
+            ['label' => 'Periode 1', 'year' => $tahunAcuan, 'color' => '#1d4ed8'],
+            ['label' => 'Periode 2', 'year' => $tahunAcuan - 1, 'color' => '#16a34a'],
+            ['label' => 'Periode 3', 'year' => $tahunAcuan - 2, 'color' => '#f59e0b'],
         ];
 
-        $periodValues = [];
-        $periodRanges = [];
-        foreach ($periodWindows as $window) {
-            $periodValues[] = $calculateAverage($continuousSeries, $window['start'], $window['end']);
+        $datasets = [];
+        foreach ($periodMeta as $meta) {
+            $year = (int) $meta['year'];
+            $yearSeries = $chartSeries[$year] ?? array_fill(0, 12, null);
 
-            $range = $buildPeriodDateRange($window['start'], $window['end'], $tahunMulai);
-            if ($range === null) {
-                continue;
-            }
-
-            $periodRanges[] = [
-                'label' => $window['label'],
-                'start_date' => $range['start_date'],
-                'end_date' => $range['end_date'],
+            $datasets[] = [
+                'label' => $meta['label'] . ' (' . $year . ')',
+                'data' => array_map(static fn ($value) => $value !== null ? (float) $value : null, $yearSeries),
+                'borderColor' => $meta['color'],
+                'backgroundColor' => $meta['color'],
+                'pointBackgroundColor' => $meta['color'],
+                'pointBorderColor' => '#ffffff',
+                'fill' => false,
+                'tension' => 0.2,
+                'spanGaps' => false,
             ];
         }
-
-        $periodHighlights = $periodRanges !== []
-            ? $this->p2tlModel->getAnalisaTemuanPeriodsByIdpel($idpel, $periodRanges, $isAdmin, $userUnitId, $unitFilter)
-            : [];
-
-        $datasets = [[
-            'label' => 'Jam Nyala',
-            'data' => $periodValues,
-            'borderColor' => '#1d4ed8',
-            'backgroundColor' => 'rgba(29, 78, 216, 0.18)',
-            'fill' => true,
-            'tension' => 0.2,
-        ]];
 
         $this->response->setHeader('X-CSRF-TOKEN', csrf_hash());
         return $this->response->setJSON([
-            'labels' => ['Periode 1', 'Periode 2', 'Periode 3'],
+            'labels' => $labels,
             'datasets' => $datasets,
-            'period_highlights' => $periodHighlights,
         ]);
     }
 
