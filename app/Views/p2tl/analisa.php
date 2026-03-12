@@ -310,7 +310,7 @@ $selectedUnitName = (string) ($selectedUnitName ?? '');
                     html = '<tr><td colspan="' + (1 + (years.length * 2) + 4) + '" class="text-center">Data tidak ditemukan</td></tr>';
                 } else {
                     $('#detailTarif').text(response.tarif || '-');
-                    $('#detailDaya').text(response.daya === null ? '-' : Number(response.daya).toLocaleString('id-ID'));
+                    $('#detailDaya').text(response.daya === null ? '-' : Number(response.daya).toLocaleString('id-ID', { maximumFractionDigits: 0 }));
 
                     var currentYear = years.length > 0 ? String(years[0]) : null;
                     var previousYear = years.length > 1 ? String(years[1]) : null;
@@ -337,7 +337,7 @@ $selectedUnitName = (string) ($selectedUnitName ?? '');
                         $.each(years, function (_idx, year) {
                             var nyalaData = row.jam_nyala || {};
                             var value = Object.prototype.hasOwnProperty.call(nyalaData, String(year)) ? nyalaData[String(year)] : null;
-                            html += '<td class="text-end">' + (value === null ? '-' : Number(value).toLocaleString('id-ID', { minimumFractionDigits: 2, maximumFractionDigits: 2 })) + '</td>';
+                            html += '<td class="text-end">' + (value === null ? '-' : Number(value).toLocaleString('id-ID', { maximumFractionDigits: 0 })) + '</td>';
                         });
 
                         var bulanan = percentDiff(currentSeries[rowIndex], previousSeries[rowIndex]);
