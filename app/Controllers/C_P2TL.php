@@ -646,6 +646,7 @@ class C_P2TL extends BaseController
             'tahun' => (int) ($this->request->getPost('tahun') ?? date('Y')),
             'unit' => (string) ($this->request->getPost('unit') ?? '*'),
             'idpel' => (string) ($this->request->getPost('idpel') ?? ''),
+            'temuan_status' => (string) ($this->request->getPost('temuan_status') ?? '*'),
         ];
 
         $isAdmin = (int) (session('group_id') ?? 0) === 1;
