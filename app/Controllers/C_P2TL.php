@@ -404,8 +404,8 @@ class C_P2TL extends BaseController
         }
 
         return view('p2tl/data_pemakaian', [
-            'title' => 'Data Pemakaian P2TL',
-            'pageHeading' => 'Data Pemakaian P2TL',
+            'title' => 'Analisa Data Pemakaian P2TL',
+            'pageHeading' => 'Analisa Data Pemakaian P2TL',
             'units' => $this->p2tlModel->getUnits(),
             'currentYear' => (int) date('Y'),
             'userGroupId' => (int) (session('group_id') ?? 0),

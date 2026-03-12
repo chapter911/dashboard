@@ -63,7 +63,7 @@ $selectedUnitName = (string) ($selectedUnitName ?? '');
         </div>
 
         <div class="table-responsive">
-            <table id="tableDataPemakaianBulanan" class="table table-bordered w-100">
+            <table id="tableDataPemakaianBulanan" class="table table-bordered w-100" data-skip-global-number-format="1">
                 <thead>
                     <tr>
                         <th>IDPEL</th>

@@ -822,6 +822,10 @@
             function applyGlobalTableFormatting() {
                 var tables = document.querySelectorAll('table.table');
                 tables.forEach(function (table) {
+                    if (table.getAttribute('data-skip-global-number-format') === '1') {
+                        return;
+                    }
+
                     var headerCells = table.querySelectorAll('thead th');
                     var excludedIndexes = {};
 
