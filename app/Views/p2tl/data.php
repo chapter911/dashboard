@@ -1,6 +1,17 @@
 <?= $this->extend('layouts/main') ?>
 
 <?= $this->section('content') ?>
+<?php
+$currentYear = (int) ($currentYear ?? date('Y'));
+$years = array_values(array_unique(array_map('intval', (array) ($years ?? []))));
+if ($years === []) {
+    $years = [$currentYear];
+}
+
+$userGroupId = (int) ($userGroupId ?? 0);
+$selectedUnitId = (int) ($selectedUnitId ?? 0);
+$selectedUnitName = (string) ($selectedUnitName ?? '');
+?>
 <link rel="stylesheet" href="<?= base_url('assets/vendor/libs/datatables-bs5/datatables.bootstrap5.css') ?>">
 <style>
 #tableDataPemakaian thead th {
@@ -38,19 +49,25 @@
             <div class="col-md-3">
                 <label class="form-label">Tahun</label>
                 <select class="form-select" id="tahun">
-                    <?php for ($y = (int) date('Y'); $y >= 2020; $y--): ?>
-                        <option value="<?= $y ?>" <?= $y === (int) ($currentYear ?? date('Y')) ? 'selected' : '' ?>><?= $y ?></option>
-                    <?php endfor; ?>
+                    <?php foreach ($years as $year): ?>
+                        <option value="<?= $year ?>" <?= $year === $currentYear ? 'selected' : '' ?>><?= $year ?></option>
+                    <?php endforeach; ?>
                 </select>
             </div>
             <div class="col-md-3">
                 <label class="form-label">Unit</label>
-                <select class="form-select" id="unit">
-                    <option value="*">SEMUA UNIT</option>
-                    <?php foreach (($units ?? []) as $u): ?>
-                        <option value="<?= (int) ($u['unit_id'] ?? 0) ?>"><?= esc($u['unit_name'] ?? '-') ?></option>
-                    <?php endforeach; ?>
-                </select>
+                <?php if ($userGroupId === 1): ?>
+                    <select class="form-select" id="unit">
+                        <option value="*">SEMUA UNIT</option>
+                        <?php foreach (($units ?? []) as $u): ?>
+                            <option value="<?= (int) ($u['unit_id'] ?? 0) ?>"><?= esc($u['unit_name'] ?? '-') ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                <?php else: ?>
+                    <select class="form-select" id="unit" disabled>
+                        <option value="<?= $selectedUnitId ?>"><?= esc($selectedUnitName !== '' ? $selectedUnitName : (string) $selectedUnitId) ?></option>
+                    </select>
+                <?php endif; ?>
             </div>
             <div class="col-md-3">
                 <label class="form-label">IDPEL</label>
@@ -60,6 +77,7 @@
                 <button type="button" class="btn btn-secondary w-100" id="btnFilter">Filter</button>
             </div>
             <div class="col-md-2 d-flex align-items-end gap-2">
+                <button type="button" class="btn btn-success w-100" id="btnExport">Export</button>
                 <button type="button" class="btn btn-primary w-100" data-bs-toggle="modal" data-bs-target="#modalImportData">Import Data</button>
                 <!-- <button type="button" class="btn btn-primary w-100" data-bs-toggle="modal" data-bs-target="#modalImportAnalisa">Upload Analisa</button> -->
             </div>
@@ -142,9 +160,9 @@
                         <div class="col-md-6">
                             <label class="form-label">Tahun</label>
                             <select class="form-select" name="tahun" required>
-                                <?php for ($y = (int) date('Y'); $y >= 2020; $y--): ?>
-                                    <option value="<?= $y ?>" <?= $y === (int) ($currentYear ?? date('Y')) ? 'selected' : '' ?>><?= $y ?></option>
-                                <?php endfor; ?>
+                                <?php foreach ($years as $year): ?>
+                                    <option value="<?= $year ?>" <?= $year === $currentYear ? 'selected' : '' ?>><?= $year ?></option>
+                                <?php endforeach; ?>
                             </select>
                         </div>
                         <div class="col-md-6">
@@ -292,6 +310,44 @@
         }
     });
     $('#btnFilter').on('click', function () { window.getData(); });
+
+    var isExporting = false;
+
+    $('#btnExport').on('click', function () {
+        if (isExporting) {
+            return;
+        }
+
+        isExporting = true;
+        var $btnExport = $('#btnExport');
+        var originalText = $btnExport.text();
+        $btnExport.prop('disabled', true).text('Exporting...');
+
+        Swal.fire({
+            title: 'Mohon Tunggu',
+            html: 'Menyiapkan file export',
+            allowOutsideClick: false,
+            showConfirmButton: false,
+            didOpen: function () { Swal.showLoading(); }
+        });
+
+        var params = new URLSearchParams();
+        params.set('tahun', $('#tahun').val() || '');
+        params.set('unit', $('#unit').val() || '*');
+        params.set('idpel', $('#idpel').val() || '');
+        params.set('search', table.search() || '');
+
+        var iframe = document.createElement('iframe');
+        iframe.style.display = 'none';
+        iframe.src = '<?= site_url('C_P2TL/exportDataPemakaian') ?>?' + params.toString();
+        document.body.appendChild(iframe);
+
+        setTimeout(function () {
+            isExporting = false;
+            $btnExport.prop('disabled', false).text(originalText);
+            Swal.close();
+        }, 2500);
+    });
 
     $('#formImportData').on('submit', function () {
         applyCsrf(csrfToken);

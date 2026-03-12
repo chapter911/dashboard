@@ -129,6 +129,7 @@ $routes->get('C_P2TL/DataPemakaian', 'C_P2TL::DataPemakaian', ['filter' => 'auth
 $routes->get('C_P2TL/dataP2TL', 'C_P2TL::dataP2TL', ['filter' => 'auth']);
 $routes->post('C_P2TL/ajaxP2TL', 'C_P2TL::ajaxP2TL', ['filter' => 'auth']);
 $routes->post('C_P2TL/ajaxDataPemakaian', 'C_P2TL::ajaxDataPemakaian', ['filter' => 'auth']);
+$routes->get('C_P2TL/exportDataPemakaian', 'C_P2TL::exportDataPemakaian', ['filter' => 'auth']);
 $routes->post('C_P2TL/importData', 'C_P2TL::importData', ['filter' => 'auth']);
 $routes->post('C_P2TL/importAnalisa', 'C_P2TL::importAnalisa', ['filter' => 'auth']);
 $routes->get('C_P2TL/downloadImportAnalisaTemplate', 'C_P2TL::downloadImportAnalisaTemplate', ['filter' => 'auth']);

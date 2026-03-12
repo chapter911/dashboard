@@ -366,12 +366,25 @@ class C_P2TL extends BaseController
         $years = $this->p2tlModel->getAvailableP2TLYears($isAdmin, $userUnitId);
         $currentYear = $years[0] ?? (int) date('Y');
 
+        $selectedUnitName = '';
+        if (! $isAdmin && $userUnitId !== null) {
+            foreach ($this->p2tlModel->getUnits() as $unit) {
+                if ((int) ($unit['unit_id'] ?? 0) === $userUnitId) {
+                    $selectedUnitName = (string) ($unit['unit_name'] ?? '');
+                    break;
+                }
+            }
+        }
+
         return view('p2tl/data', [
             'title' => 'Data P2TL',
             'pageHeading' => 'Data P2TL',
             'units' => $this->p2tlModel->getUnits(),
             'currentYear' => $currentYear,
             'years' => $years,
+            'userGroupId' => (int) (session('group_id') ?? 0),
+            'selectedUnitId' => (int) (session('unit_id') ?? 0),
+            'selectedUnitName' => $selectedUnitName,
         ]);
     }
 
@@ -440,6 +453,84 @@ class C_P2TL extends BaseController
             'recordsFiltered' => $result['filtered'],
             'data' => $data,
         ]);
+    }
+
+    public function exportDataPemakaian(): ResponseInterface
+    {
+        $filters = [
+            'tahun' => (int) ($this->request->getGet('tahun') ?? date('Y')),
+            'unit' => (string) ($this->request->getGet('unit') ?? '*'),
+            'idpel' => (string) ($this->request->getGet('idpel') ?? ''),
+        ];
+
+        $search = trim((string) ($this->request->getGet('search') ?? ''));
+        $isAdmin = (int) (session('group_id') ?? 0) === 1;
+        $userUnitId = session('unit_id') !== null ? (int) session('unit_id') : null;
+
+        $result = $this->p2tlModel->getDataPemakaianDatatable($filters, 0, 0, $search, $isAdmin, $userUnitId);
+        $rows = $result['rows'];
+
+        $spreadsheet = new \PhpOffice\PhpSpreadsheet\Spreadsheet();
+        $sheet = $spreadsheet->getActiveSheet();
+        $sheet->setTitle('Data P2TL');
+
+        $headers = [
+            'NO', 'NOAGENDA', 'IDPEL', 'NAMA', 'GOL', 'ALAMAT', 'DAYA', 'KWH',
+            'TAGIHAN BEBAN', 'TAGIHAN KWH', 'TAGIHAN TS',
+            'MATERAI', 'SEGEL', 'MATERIA', 'RPPPJ', 'RPUJL', 'RPPPN',
+            'TOTAL', 'TUNAI', 'ANGSURAN',
+            'TANGGAL REGISTER', 'NOMOR REGISTER', 'TANGGAL SPH', 'NOMOR SPH',
+        ];
+        $sheet->fromArray($headers, null, 'A1');
+
+        $no = 1;
+        $rowNum = 2;
+        foreach ($rows as $row) {
+            $sheet->fromArray([
+                $no++,
+                (string) ($row['noagenda'] ?? ''),
+                (string) ($row['idpel'] ?? ''),
+                (string) ($row['nama'] ?? ''),
+                (string) ($row['gol'] ?? ''),
+                (string) ($row['alamat'] ?? ''),
+                (float) ($row['daya'] ?? 0),
+                (float) ($row['kwh'] ?? 0),
+                (float) ($row['tagihan_beban'] ?? 0),
+                (float) ($row['tagihan_kwh'] ?? 0),
+                (float) ($row['tagihan_ts'] ?? 0),
+                (float) ($row['materai'] ?? 0),
+                (float) ($row['segel'] ?? 0),
+                (float) ($row['materia'] ?? 0),
+                (float) ($row['rpppj'] ?? 0),
+                (float) ($row['rpujl'] ?? 0),
+                (float) ($row['rpppn'] ?? 0),
+                (float) ($row['rupiah_total'] ?? 0),
+                (float) ($row['rupiah_tunai'] ?? 0),
+                (float) ($row['rupiah_angsuran'] ?? 0),
+                (string) ($row['tanggal_register'] ?? ''),
+                (string) ($row['nomor_register'] ?? ''),
+                (string) ($row['tanggal_sph'] ?? ''),
+                (string) ($row['nomor_sph'] ?? ''),
+            ], null, 'A' . $rowNum);
+            $rowNum++;
+        }
+
+        $sheet->getStyle('A1:X1')->getFont()->setBold(true);
+        $sheet->getStyle('G2:T' . max(2, $rowNum - 1))->getNumberFormat()->setFormatCode('#,##0');
+
+        foreach (range('A', 'X') as $col) {
+            $sheet->getColumnDimension($col)->setAutoSize(true);
+        }
+
+        $writer = new \PhpOffice\PhpSpreadsheet\Writer\Xlsx($spreadsheet);
+        ob_start();
+        $writer->save('php://output');
+        $binary = (string) ob_get_clean();
+
+        return $this->response
+            ->setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+            ->setHeader('Content-Disposition', 'attachment; filename="Data_P2TL_' . date('Ymd_His') . '.xlsx"')
+            ->setBody($binary);
     }
 
     public function Analisa(): string
