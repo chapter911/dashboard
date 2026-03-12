@@ -331,7 +331,7 @@ $selectedUnitName = (string) ($selectedUnitName ?? '');
                         $.each(years, function (_idx, year) {
                             var kwhData = row.pemakaian_kwh || {};
                             var value = Object.prototype.hasOwnProperty.call(kwhData, String(year)) ? kwhData[String(year)] : null;
-                            html += '<td class="text-end">' + (value === null ? '-' : Number(value).toLocaleString('id-ID')) + '</td>';
+                            html += '<td class="text-end">' + (value === null ? '-' : Number(value).toLocaleString('id-ID', { maximumFractionDigits: 0 })) + '</td>';
                         });
 
                         $.each(years, function (_idx, year) {

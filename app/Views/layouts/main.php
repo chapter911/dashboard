@@ -806,8 +806,17 @@
                     return;
                 }
 
-                var fractionMatch = rawText.match(/[\.,](\d+)$/);
-                var fractionDigits = fractionMatch ? Math.min(4, fractionMatch[1].length) : 0;
+                var fractionDigits = 0;
+                if (/^-?\d{1,3}(?:\.\d{3})+,\d+$/.test(rawText)) {
+                    // Format ribuan-titik dengan desimal-koma: 1.234.567,89 → 2 desimal
+                    var decimalMatch = rawText.match(/,(\d+)$/);
+                    fractionDigits = decimalMatch ? Math.min(4, decimalMatch[1].length) : 0;
+                } else if (!/^-?\d{1,3}(?:\.\d{3})+$/.test(rawText)) {
+                    // Bukan format ribuan murni, cek desimal biasa
+                    var fractionMatch = rawText.match(/[\.,](\d+)$/);
+                    fractionDigits = fractionMatch ? Math.min(4, fractionMatch[1].length) : 0;
+                }
+                // Format ribuan murni (7.700.000) → fractionDigits tetap 0
                 cell.textContent = new Intl.NumberFormat('id-ID', {
                     minimumFractionDigits: fractionDigits,
                     maximumFractionDigits: fractionDigits
