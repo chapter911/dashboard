@@ -784,9 +784,9 @@ class C_P2TL extends BaseController
         $periodValues = [null, null, null];
         if ($baseIndex !== null) {
             $periodValues = [
-                $calculateAverage($continuousSeries, $baseIndex - 2, $baseIndex),
-                $calculateAverage($continuousSeries, $baseIndex - 5, $baseIndex - 3),
-                $calculateAverage($continuousSeries, $baseIndex - 8, $baseIndex - 6),
+                $calculateAverage($continuousSeries, $baseIndex - 11, $baseIndex),
+                $calculateAverage($continuousSeries, $baseIndex - 23, $baseIndex - 12),
+                $calculateAverage($continuousSeries, $baseIndex - 35, $baseIndex - 24),
             ];
         }
 
