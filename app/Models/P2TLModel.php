@@ -564,7 +564,7 @@ SQL;
         $builder = $this->db->table('trn_p2tl_analisa')
             ->select('idpel, tarif, daya, periode, pemakaian_kwh')
             ->where('idpel', $idpel)
-            ->where('YEAR(periode) IN (' . ($year - 1) . ', ' . $year . ')', null, false)
+            ->where('YEAR(periode) IN (' . ($year - 2) . ', ' . ($year - 1) . ', ' . $year . ')', null, false)
             ->orderBy('periode', 'ASC');
 
         if (! $isAdmin && $userUnitId !== null) {
@@ -620,6 +620,20 @@ SQL;
 
         $first = $rows[0];
 
+        // Build continuous JN series: 36 months [Jan(y-2)..Dec(y-2), Jan(y-1)..Dec(y-1), Jan(y)..Dec(y)]
+        $jnContinuous = array_fill(0, 36, null);
+        for ($m = 1; $m <= 12; $m++) {
+            if (isset($map[$m]['jam_nyala'][(string) ($year - 2)])) {
+                $jnContinuous[$m - 1] = $map[$m]['jam_nyala'][(string) ($year - 2)];
+            }
+            if (isset($map[$m]['jam_nyala'][(string) ($year - 1)])) {
+                $jnContinuous[12 + $m - 1] = $map[$m]['jam_nyala'][(string) ($year - 1)];
+            }
+            if (isset($map[$m]['jam_nyala'][(string) $year])) {
+                $jnContinuous[24 + $m - 1] = $map[$m]['jam_nyala'][(string) $year];
+            }
+        }
+
         return [
             'has_data' => true,
             'idpel' => $idpel,
@@ -627,6 +641,7 @@ SQL;
             'daya' => $first['daya'] !== null ? (float) $first['daya'] : null,
             'years' => $years,
             'rows' => $outRows,
+            'jn_continuous' => $jnContinuous,
         ];
     }
 

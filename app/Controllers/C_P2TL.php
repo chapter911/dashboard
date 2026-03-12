@@ -729,45 +729,79 @@ class C_P2TL extends BaseController
     public function getAnalisaGrafikAjax(): ResponseInterface
     {
         $idpel = trim((string) ($this->request->getPost('idpel') ?? ''));
+        $tahunAcuan = (int) ($this->request->getPost('tahun') ?? date('Y'));
         $unit = (string) ($this->request->getPost('unit') ?? '*');
 
         if ($idpel === '') {
             return $this->response->setJSON([
-                'labels' => ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'],
+                'labels' => ['Periode 1', 'Periode 2', 'Periode 3'],
                 'datasets' => [],
             ]);
         }
 
-        $tahunAcuan = (int) date('Y');
         $tahunMulai = $tahunAcuan - 2;
-        $years = [];
-        for ($year = $tahunAcuan; $year >= $tahunMulai; $year--) {
-            $years[] = $year;
-        }
 
         $isAdmin = (int) (session('group_id') ?? 0) === 1;
         $userUnitId = session('unit_id') !== null ? (int) session('unit_id') : null;
         $unitFilter = ($unit !== '' && $unit !== '*') ? (int) $unit : null;
 
         $chartSeries = $this->p2tlModel->getAnalisaGrafikByIdpelRange($idpel, $tahunAcuan, $tahunMulai, $isAdmin, $userUnitId, $unitFilter);
-        $colors = ['#1d4ed8', '#0891b2', '#059669', '#ea580c'];
-        $datasets = [];
+        $continuousSeries = [];
+        for ($year = $tahunMulai; $year <= $tahunAcuan; $year++) {
+            $yearSeries = $chartSeries[$year] ?? array_fill(0, 12, null);
+            foreach ($yearSeries as $value) {
+                $continuousSeries[] = $value !== null ? (float) $value : null;
+            }
+        }
 
-        foreach ($years as $index => $year) {
-            $color = $colors[$index % count($colors)];
-            $datasets[] = [
-                'label' => 'Jam Nyala ' . $year,
-                'data' => array_values($chartSeries[$year] ?? array_fill(0, 12, null)),
-                'borderColor' => $color,
-                'backgroundColor' => $color,
-                'fill' => false,
-                'tension' => 0.2,
+        $baseIndex = null;
+        for ($index = count($continuousSeries) - 1; $index >= 0; $index--) {
+            if ($continuousSeries[$index] !== null) {
+                $baseIndex = $index;
+                break;
+            }
+        }
+
+        $calculateAverage = static function (array $series, int $startIndex, int $endIndex): ?float {
+            if ($startIndex < 0 || $endIndex >= count($series)) {
+                return null;
+            }
+
+            $total = 0.0;
+            $count = 0;
+            for ($i = $startIndex; $i <= $endIndex; $i++) {
+                if ($series[$i] === null) {
+                    return null;
+                }
+
+                $total += (float) $series[$i];
+                $count++;
+            }
+
+            return $count > 0 ? ($total / $count) : null;
+        };
+
+        $periodValues = [null, null, null];
+        if ($baseIndex !== null) {
+            $periodValues = [
+                $calculateAverage($continuousSeries, $baseIndex - 2, $baseIndex),
+                $calculateAverage($continuousSeries, $baseIndex - 5, $baseIndex - 3),
+                $calculateAverage($continuousSeries, $baseIndex - 8, $baseIndex - 6),
             ];
         }
 
+        $datasets = [[
+            'label' => 'Jam Nyala',
+            'data' => $periodValues,
+            'borderColor' => '#1d4ed8',
+            'backgroundColor' => 'rgba(29, 78, 216, 0.18)',
+            'fill' => true,
+            'tension' => 0.2,
+        ]];
+
         $this->response->setHeader('X-CSRF-TOKEN', csrf_hash());
         return $this->response->setJSON([
-            'labels' => ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'],
+            'labels' => ['Periode 1', 'Periode 2', 'Periode 3'],
             'datasets' => $datasets,
         ]);
     }

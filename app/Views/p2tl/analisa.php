@@ -256,29 +256,18 @@ $selectedUnitName = (string) ($selectedUnitName ?? '');
                     return ((currentValue - baseValue) / baseValue) * 100;
                 }
 
-                function windowAverage(values, startIndex, endIndex) {
+                // continuousWindowAvg: returns null if out-of-bounds or any value in range is null
+                function continuousWindowAvg(series, startIdx, endIdx) {
+                    if (startIdx < 0 || endIdx >= series.length) {
+                        return null;
+                    }
                     var total = 0;
                     var count = 0;
-                    for (var i = startIndex; i <= endIndex; i++) {
-                        var value = values[i];
-                        if (value === null) {
+                    for (var i = startIdx; i <= endIdx; i++) {
+                        if (series[i] === null) {
                             return null;
                         }
-                        total += value;
-                        count++;
-                    }
-                    return count > 0 ? (total / count) : null;
-                }
-
-                function ytdAverage(values, endIndex) {
-                    var total = 0;
-                    var count = 0;
-                    for (var i = 0; i <= endIndex; i++) {
-                        var value = values[i];
-                        if (value === null) {
-                            continue;
-                        }
-                        total += value;
+                        total += series[i];
                         count++;
                     }
                     return count > 0 ? (total / count) : null;
@@ -314,16 +303,11 @@ $selectedUnitName = (string) ($selectedUnitName ?? '');
 
                     var currentYear = years.length > 0 ? String(years[0]) : null;
                     var previousYear = years.length > 1 ? String(years[1]) : null;
-                    var currentSeries = [];
-                    var previousSeries = [];
-
-                    $.each(response.rows || [], function (_idx, row) {
-                        var nyalaData = row.jam_nyala || {};
-                        var currentValue = (currentYear !== null && Object.prototype.hasOwnProperty.call(nyalaData, currentYear)) ? nyalaData[currentYear] : null;
-                        var previousValue = (previousYear !== null && Object.prototype.hasOwnProperty.call(nyalaData, previousYear)) ? nyalaData[previousYear] : null;
-                        currentSeries.push(currentValue === null ? null : Number(currentValue));
-                        previousSeries.push(previousValue === null ? null : Number(previousValue));
-                    });
+                    // Continuous 36-month series: [Jan(y-2)..Dec(y-2), Jan(y-1)..Dec(y-1), Jan(y)..Dec(y)]
+                    var continuousSeries = Array.isArray(response.jn_continuous)
+                        ? response.jn_continuous.map(function (v) { return v === null ? null : Number(v); })
+                        : [];
+                    while (continuousSeries.length < 36) { continuousSeries.push(null); }
 
                     $.each(response.rows || [], function (rowIndex, row) {
                         html += '<tr><td>' + row.bulan + '</td>';
@@ -340,18 +324,21 @@ $selectedUnitName = (string) ($selectedUnitName ?? '');
                             html += '<td class="text-end">' + (value === null ? '-' : Number(value).toLocaleString('id-ID', { maximumFractionDigits: 0 })) + '</td>';
                         });
 
-                        var bulanan = percentDiff(currentSeries[rowIndex], previousSeries[rowIndex]);
-                        var triwulanCurrent = rowIndex >= 2 ? windowAverage(currentSeries, rowIndex - 2, rowIndex) : null;
-                        var triwulanPrevious = rowIndex >= 2 ? windowAverage(previousSeries, rowIndex - 2, rowIndex) : null;
-                        var triwulan = percentDiff(triwulanCurrent, triwulanPrevious);
-
-                        var semesterCurrent = rowIndex >= 5 ? windowAverage(currentSeries, rowIndex - 5, rowIndex) : null;
-                        var semesterPrevious = rowIndex >= 5 ? windowAverage(previousSeries, rowIndex - 5, rowIndex) : null;
-                        var semester = percentDiff(semesterCurrent, semesterPrevious);
-
-                        var tahunanCurrent = ytdAverage(currentSeries, rowIndex);
-                        var tahunanPrevious = ytdAverage(previousSeries, rowIndex);
-                        var tahunan = percentDiff(tahunanCurrent, tahunanPrevious);
+                        // baseIdx: position of this month in the 36-month continuous series (rowIndex 0=Jan at offset 24)
+                        var baseIdx = 24 + rowIndex;
+                        var bulanan = percentDiff(continuousSeries[baseIdx], continuousSeries[baseIdx - 1]);
+                        var triwulan = percentDiff(
+                            continuousWindowAvg(continuousSeries, baseIdx - 2, baseIdx),
+                            continuousWindowAvg(continuousSeries, baseIdx - 5, baseIdx - 3)
+                        );
+                        var semester = percentDiff(
+                            continuousWindowAvg(continuousSeries, baseIdx - 5, baseIdx),
+                            continuousWindowAvg(continuousSeries, baseIdx - 11, baseIdx - 6)
+                        );
+                        var tahunan = percentDiff(
+                            continuousWindowAvg(continuousSeries, baseIdx - 11, baseIdx),
+                            continuousWindowAvg(continuousSeries, baseIdx - 23, baseIdx - 12)
+                        );
 
                         html += '<td class="text-end">' + formatPercent(bulanan) + '</td>';
                         html += '<td class="text-end">' + formatPercent(triwulan) + '</td>';
