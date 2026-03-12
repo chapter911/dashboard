@@ -116,6 +116,15 @@
     var csrfFieldName = '<?= esc(csrf_token()) ?>';
     var csrfToken = '<?= esc(csrf_hash()) ?>';
 
+    function applyCsrf(token) {
+        if (!token) {
+            return;
+        }
+
+        csrfToken = token;
+        $('input[name="' + csrfFieldName + '"]').val(token);
+    }
+
     function parseID(value) {
         if (value === null || value === undefined || value === '') return 0;
         var num = Number(String(value).replace(/\./g, '').replace(',', '.'));
@@ -135,10 +144,7 @@
                 [csrfFieldName]: csrfToken
             },
             success: function (res, _status, xhr) {
-                var fresh = xhr.getResponseHeader('X-CSRF-TOKEN');
-                if (fresh) {
-                    csrfToken = fresh;
-                }
+                applyCsrf(xhr.getResponseHeader('X-CSRF-TOKEN'));
 
                 var rows = (res && res.data) ? res.data : [];
                 var html = '';
@@ -158,10 +164,7 @@
                 Swal.fire({ title: 'Mohon Tunggu', html: 'Memuat data target', allowOutsideClick: false, showConfirmButton: false, didOpen: function(){ Swal.showLoading(); } });
             },
             error: function (xhr) {
-                var fresh = xhr.getResponseHeader('X-CSRF-TOKEN');
-                if (fresh) {
-                    csrfToken = fresh;
-                }
+                applyCsrf(xhr.getResponseHeader('X-CSRF-TOKEN'));
                 Swal.fire('Error', 'Gagal memuat target (' + (xhr && xhr.status ? xhr.status : 'unknown') + ').', 'error');
             },
             complete: function () {
@@ -195,10 +198,7 @@
                 Swal.fire({ title: 'Mohon Tunggu', html: 'Memuat target harian', allowOutsideClick: false, showConfirmButton: false, didOpen: function(){ Swal.showLoading(); } });
             },
             success: function (res, _status, xhr) {
-                var fresh = xhr.getResponseHeader('X-CSRF-TOKEN');
-                if (fresh) {
-                    csrfToken = fresh;
-                }
+                applyCsrf(xhr.getResponseHeader('X-CSRF-TOKEN'));
 
                 var rows = (res && res.data) ? res.data : [];
                 rows.forEach(function (r, idx) {
@@ -212,10 +212,7 @@
                 $('#modalHarian').modal('show');
             },
             error: function (xhr) {
-                var fresh = xhr.getResponseHeader('X-CSRF-TOKEN');
-                if (fresh) {
-                    csrfToken = fresh;
-                }
+                applyCsrf(xhr.getResponseHeader('X-CSRF-TOKEN'));
                 Swal.fire('Error', 'Gagal memuat target harian (' + (xhr && xhr.status ? xhr.status : 'unknown') + ').', 'error');
             },
             complete: function () {
@@ -237,10 +234,12 @@
     });
 
     $('#formTarget').on('submit', function () {
+        applyCsrf(csrfToken);
         Swal.fire({ title: 'Mohon Tunggu', html: 'Menyimpan target', allowOutsideClick: false, showConfirmButton: false, didOpen: function(){ Swal.showLoading(); } });
     });
 
     $('#formTargetHarian').on('submit', function () {
+        applyCsrf(csrfToken);
         Swal.fire({ title: 'Mohon Tunggu', html: 'Menyimpan target harian', allowOutsideClick: false, showConfirmButton: false, didOpen: function(){ Swal.showLoading(); } });
     });
 
