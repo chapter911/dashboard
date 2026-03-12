@@ -474,6 +474,7 @@ SQL;
         $year = (int) ($filters['tahun'] ?? date('Y'));
         $unit = (string) ($filters['unit'] ?? '*');
         $idpel = trim((string) ($filters['idpel'] ?? ''));
+        $temuanStatus = (string) ($filters['temuan_status'] ?? '*');
 
         $unitWhere = '';
         $binds = [$year, $year];
@@ -537,6 +538,31 @@ SQL;
             $whereBinds[] = '%' . $searchValue . '%';
             $whereBinds[] = '%' . $searchValue . '%';
             $whereBinds[] = '%' . $searchValue . '%';
+        }
+
+        if ($temuanStatus === 'has' || $temuanStatus === 'none') {
+            $temuanExistsSql = "EXISTS (
+                SELECT 1
+                FROM trn_p2tl p
+                WHERE p.idpel = x.idpel
+                    AND p.tanggal_register IS NOT NULL
+                    AND YEAR(p.tanggal_register) = ?
+                    AND UPPER(TRIM(p.gol)) IN ('P1', 'P2', 'P3', 'P4', 'K2')";
+            $temuanBinds = [$year];
+
+            if (! $isAdmin && $userUnitId !== null) {
+                $temuanExistsSql .= ' AND p.unit_id = ?';
+                $temuanBinds[] = $userUnitId;
+            } elseif ($unit !== '' && $unit !== '*') {
+                $temuanExistsSql .= ' AND p.unit_id = ?';
+                $temuanBinds[] = (int) $unit;
+            }
+
+            $temuanExistsSql .= ')';
+
+            $where .= ($where === '' ? ' WHERE ' : ' AND ')
+                . ($temuanStatus === 'has' ? $temuanExistsSql : 'NOT ' . $temuanExistsSql);
+            $whereBinds = array_merge($whereBinds, $temuanBinds);
         }
 
         $countSql = 'SELECT COUNT(*) AS total FROM (' . $baseSql . ') x' . $where;
@@ -1193,12 +1219,13 @@ SQL;
     /**
      * @return list<array<string,mixed>>
      */
-    public function getAnalisaSummaryExport(int $year, string $unit = '*', string $idpel = '', bool $isAdmin = true, ?int $userUnitId = null): array
+    public function getAnalisaSummaryExport(int $year, string $unit = '*', string $idpel = '', bool $isAdmin = true, ?int $userUnitId = null, string $temuanStatus = '*'): array
     {
         $rows = $this->getAnalisaSummaryDatatable([
             'tahun' => $year,
             'unit' => $unit,
             'idpel' => $idpel,
+            'temuan_status' => $temuanStatus,
         ], 0, 1000000, null, $isAdmin, $userUnitId);
 
         return $rows['rows'];

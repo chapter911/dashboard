@@ -484,6 +484,7 @@ class C_P2TL extends BaseController
             'tahun' => (int) ($this->request->getPost('tahun') ?? date('Y')),
             'unit' => (string) ($this->request->getPost('unit') ?? '*'),
             'idpel' => (string) ($this->request->getPost('idpel') ?? ''),
+            'temuan_status' => (string) ($this->request->getPost('temuan_status') ?? '*'),
         ];
 
         $isAdmin = (int) (session('group_id') ?? 0) === 1;
@@ -946,10 +947,11 @@ class C_P2TL extends BaseController
         $year = (int) ($this->request->getGet('tahun') ?? date('Y'));
         $unit = (string) ($this->request->getGet('unit') ?? '*');
         $idpel = trim((string) ($this->request->getGet('idpel') ?? ''));
+        $temuanStatus = (string) ($this->request->getGet('temuan_status') ?? '*');
 
         $isAdmin = (int) (session('group_id') ?? 0) === 1;
         $userUnitId = session('unit_id') !== null ? (int) session('unit_id') : null;
-        $rows = $this->p2tlModel->getAnalisaSummaryExport($year, $unit, $idpel, $isAdmin, $userUnitId);
+        $rows = $this->p2tlModel->getAnalisaSummaryExport($year, $unit, $idpel, $isAdmin, $userUnitId, $temuanStatus);
 
         $headers = ['NO', 'IDPEL', 'TARIF', 'DAYA', 'JN RATA-RATA', 'RATA-RATA GOL', 'KONDISI', 'MIN', 'MAX', 'DLPD', 'COUNT EMIN'];
         $exportRows = [];

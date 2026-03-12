@@ -67,6 +67,14 @@ $selectedUnitName = (string) ($selectedUnitName ?? '');
                 <label class="form-label">IDPEL</label>
                 <input type="text" class="form-control" id="idpel" placeholder="Cari IDPEL...">
             </div>
+            <div class="col-md-2">
+                <label class="form-label">Status Temuan</label>
+                <select class="form-select" id="temuan_status">
+                    <option value="*">Semua Data</option>
+                    <option value="has">Ada Temuan</option>
+                    <option value="none">Tidak Ada Temuan</option>
+                </select>
+            </div>
         </div>
 
         <div class="table-responsive">
@@ -205,6 +213,7 @@ $selectedUnitName = (string) ($selectedUnitName ?? '');
                 d.tahun = $('#tahun').val() || '<?= $selectedYear ?>';
                 d.unit = $('#unit').val();
                 d.idpel = $('#idpel').val();
+                d.temuan_status = $('#temuan_status').val();
                 d[csrfFieldName] = csrfToken;
             },
             complete: function (xhr) {
@@ -494,7 +503,7 @@ $selectedUnitName = (string) ($selectedUnitName ?? '');
         table.ajax.reload();
     }
 
-    $('#tahun, #unit').on('change', function () { reloadAnalisa(); });
+    $('#tahun, #unit, #temuan_status').on('change', function () { reloadAnalisa(); });
     $('#idpel').on('keyup', function () { table.ajax.reload(); });
 
     $('#tableAnalisa').on('preXhr.dt', function () {
@@ -512,7 +521,8 @@ $selectedUnitName = (string) ($selectedUnitName ?? '');
         var qs = $.param({
             tahun: $('#tahun').val(),
             unit: $('#unit').val(),
-            idpel: $('#idpel').val() || ''
+            idpel: $('#idpel').val() || '',
+            temuan_status: $('#temuan_status').val() || '*'
         });
         var url = '<?= site_url('C_P2TL/exportAnalisaExcel') ?>?' + qs;
 
