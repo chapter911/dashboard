@@ -451,15 +451,17 @@ class C_P2TL extends BaseController
 
         $rows = [];
         foreach ($grouped as $group) {
+            $dayaInt = (int) round((float) $group['daya']);
             $line = [
                 $group['idpel'],
                 $group['tarif'],
-                number_format((float) $group['daya'], 0, ',', '.'),
+                number_format((float) $dayaInt, 0, ',', '.'),
                 (string) $group['tahun'],
             ];
 
             for ($m = 1; $m <= 12; $m++) {
-                $line[] = number_format((float) ($group['months'][$m] ?? 0), 0, ',', '.');
+                $monthValue = (int) round((float) ($group['months'][$m] ?? 0));
+                $line[] = number_format((float) $monthValue, 0, ',', '.');
             }
 
             $rows[] = $line;
