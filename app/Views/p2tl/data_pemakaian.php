@@ -96,6 +96,30 @@ $selectedUnitName = (string) ($selectedUnitName ?? '');
 (function () {
     var csrfFieldName = '<?= esc(csrf_token()) ?>';
     var csrfToken = '<?= esc(csrf_hash()) ?>';
+    var intFormatter = new Intl.NumberFormat('id-ID', { maximumFractionDigits: 0 });
+
+    function formatIntegerCell(data) {
+        if (data === null || data === undefined) {
+            return '0';
+        }
+
+        var raw = String(data).trim();
+        if (raw === '') {
+            return '0';
+        }
+
+        var normalized = raw
+            .replace(/\./g, '')
+            .replace(/,/g, '.')
+            .replace(/[^0-9.-]/g, '');
+        var value = Math.round(Number(normalized));
+
+        if (!Number.isFinite(value)) {
+            return '0';
+        }
+
+        return intFormatter.format(value);
+    }
 
     function applyCsrf(token) {
         if (!token) {
@@ -130,7 +154,8 @@ $selectedUnitName = (string) ($selectedUnitName ?? '');
             }
         },
         columnDefs: [
-            { className: 'text-end', targets: [2,4,5,6,7,8,9,10,11,12,13,14,15] }
+            { className: 'text-end', targets: [2,4,5,6,7,8,9,10,11,12,13,14,15] },
+            { render: function (data) { return formatIntegerCell(data); }, targets: [2,4,5,6,7,8,9,10,11,12,13,14,15] }
         ]
     });
 
