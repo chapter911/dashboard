@@ -749,6 +749,81 @@ SQL;
     }
 
     /**
+     * @return array<int, array<int, array{count:int,has_temuan:bool,gol_counts:array<string,int>,gol_detail:string}>>
+     */
+    public function getAnalisaTemuanBulananByIdpel(string $idpel, int $tahunAwal, int $tahunAkhir, bool $isAdmin, ?int $userUnitId, ?int $unitFilter = null): array
+    {
+        $allowedGols = ['P1', 'P2', 'P3', 'P4', 'K2'];
+
+        $builder = $this->db->table('trn_p2tl')
+            ->select('YEAR(tanggal_register) AS tahun, MONTH(tanggal_register) AS bulan, UPPER(TRIM(gol)) AS gol, COUNT(*) AS total', false)
+            ->where('idpel', $idpel)
+            ->where('tanggal_register IS NOT NULL', null, false)
+            ->where('YEAR(tanggal_register) >=', $tahunAwal)
+            ->where('YEAR(tanggal_register) <=', $tahunAkhir)
+            ->where("UPPER(TRIM(gol)) IN ('P1', 'P2', 'P3', 'P4', 'K2')", null, false)
+            ->groupBy('YEAR(tanggal_register), MONTH(tanggal_register), UPPER(TRIM(gol))')
+            ->orderBy('YEAR(tanggal_register)', 'ASC')
+            ->orderBy('MONTH(tanggal_register)', 'ASC');
+
+        if (! $isAdmin && $userUnitId !== null) {
+            $builder->where('unit_id', $userUnitId);
+        } elseif ($unitFilter !== null && $unitFilter > 0) {
+            $builder->where('unit_id', $unitFilter);
+        }
+
+        $rows = $builder->get()->getResultArray();
+
+        $result = [];
+        for ($year = $tahunAwal; $year <= $tahunAkhir; $year++) {
+            $result[$year] = [];
+            for ($month = 1; $month <= 12; $month++) {
+                $golCounts = [];
+                foreach ($allowedGols as $gol) {
+                    $golCounts[$gol] = 0;
+                }
+
+                $result[$year][$month] = [
+                    'count' => 0,
+                    'has_temuan' => false,
+                    'gol_counts' => $golCounts,
+                    'gol_detail' => '-',
+                ];
+            }
+        }
+
+        foreach ($rows as $row) {
+            $year = (int) ($row['tahun'] ?? 0);
+            $month = (int) ($row['bulan'] ?? 0);
+            $gol = strtoupper(trim((string) ($row['gol'] ?? '')));
+            $total = (int) ($row['total'] ?? 0);
+
+            if (! isset($result[$year][$month]) || ! in_array($gol, $allowedGols, true)) {
+                continue;
+            }
+
+            $result[$year][$month]['gol_counts'][$gol] += $total;
+            $result[$year][$month]['count'] += $total;
+            $result[$year][$month]['has_temuan'] = $result[$year][$month]['count'] > 0;
+        }
+
+        for ($year = $tahunAwal; $year <= $tahunAkhir; $year++) {
+            for ($month = 1; $month <= 12; $month++) {
+                $detailParts = [];
+                foreach ($allowedGols as $gol) {
+                    if (($result[$year][$month]['gol_counts'][$gol] ?? 0) > 0) {
+                        $detailParts[] = $gol . ': ' . $result[$year][$month]['gol_counts'][$gol];
+                    }
+                }
+
+                $result[$year][$month]['gol_detail'] = $detailParts !== [] ? implode(', ', $detailParts) : '-';
+            }
+        }
+
+        return $result;
+    }
+
+    /**
      * @return list<array<string, mixed>>
      */
     public function getTargetByYear(int $year): array

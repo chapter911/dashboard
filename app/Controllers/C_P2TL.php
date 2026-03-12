@@ -746,6 +746,7 @@ class C_P2TL extends BaseController
         $unitFilter = ($unit !== '' && $unit !== '*') ? (int) $unit : null;
 
         $chartSeries = $this->p2tlModel->getAnalisaGrafikByIdpelRange($idpel, $tahunAcuan, $tahunMulai, $isAdmin, $userUnitId, $unitFilter);
+        $temuanBulanan = $this->p2tlModel->getAnalisaTemuanBulananByIdpel($idpel, $tahunMulai, $tahunAcuan, $isAdmin, $userUnitId, $unitFilter);
         $labels = ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];
 
         $periodMeta = [
@@ -758,17 +759,39 @@ class C_P2TL extends BaseController
         foreach ($periodMeta as $meta) {
             $year = (int) $meta['year'];
             $yearSeries = $chartSeries[$year] ?? array_fill(0, 12, null);
+            $temuanSeries = [];
+            $pointBackgroundColors = [];
+            $pointBorderColors = [];
+            $pointRadii = [];
+
+            for ($month = 1; $month <= 12; $month++) {
+                $temuanInfo = $temuanBulanan[$year][$month] ?? [
+                    'count' => 0,
+                    'has_temuan' => false,
+                    'gol_counts' => [],
+                    'gol_detail' => '-',
+                ];
+
+                $hasTemuan = (bool) ($temuanInfo['has_temuan'] ?? false);
+                $temuanSeries[] = $temuanInfo;
+                $pointBackgroundColors[] = $hasTemuan ? '#dc3545' : $meta['color'];
+                $pointBorderColors[] = $hasTemuan ? '#dc3545' : '#ffffff';
+                $pointRadii[] = $hasTemuan ? 5 : 3;
+            }
 
             $datasets[] = [
                 'label' => $meta['label'] . ' (' . $year . ')',
                 'data' => array_map(static fn ($value) => $value !== null ? (float) $value : null, $yearSeries),
                 'borderColor' => $meta['color'],
                 'backgroundColor' => $meta['color'],
-                'pointBackgroundColor' => $meta['color'],
-                'pointBorderColor' => '#ffffff',
+                'pointBackgroundColor' => $pointBackgroundColors,
+                'pointBorderColor' => $pointBorderColors,
+                'pointRadius' => $pointRadii,
+                'pointHoverRadius' => 7,
                 'fill' => false,
                 'tension' => 0.2,
                 'spanGaps' => false,
+                'temuan' => $temuanSeries,
             ];
         }
 

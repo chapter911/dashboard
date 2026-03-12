@@ -376,18 +376,91 @@ $selectedUnitName = (string) ($selectedUnitName ?? '');
                             chartAnalisa.destroy();
                         }
 
+                        var temuanBackgroundPlugin = {
+                            id: 'temuanBackgroundPlugin',
+                            beforeDatasetsDraw: function (chart) {
+                                var ctx2 = chart.ctx;
+                                ctx2.save();
+
+                                function drawRoundedRect(ctx, x, y, width, height, radius) {
+                                    var safeRadius = Math.min(radius, width / 2, height / 2);
+                                    ctx.beginPath();
+                                    ctx.moveTo(x + safeRadius, y);
+                                    ctx.lineTo(x + width - safeRadius, y);
+                                    ctx.quadraticCurveTo(x + width, y, x + width, y + safeRadius);
+                                    ctx.lineTo(x + width, y + height - safeRadius);
+                                    ctx.quadraticCurveTo(x + width, y + height, x + width - safeRadius, y + height);
+                                    ctx.lineTo(x + safeRadius, y + height);
+                                    ctx.quadraticCurveTo(x, y + height, x, y + height - safeRadius);
+                                    ctx.lineTo(x, y + safeRadius);
+                                    ctx.quadraticCurveTo(x, y, x + safeRadius, y);
+                                    ctx.closePath();
+                                }
+
+                                (chart.data.datasets || []).forEach(function (dataset, datasetIndex) {
+                                    var meta = chart.getDatasetMeta(datasetIndex);
+                                    var temuan = Array.isArray(dataset.temuan) ? dataset.temuan : [];
+                                    if (!meta || meta.hidden) {
+                                        return;
+                                    }
+
+                                    meta.data.forEach(function (element, index) {
+                                        var temuanInfo = temuan[index] || null;
+                                        if (!element || !temuanInfo || temuanInfo.has_temuan !== true) {
+                                            return;
+                                        }
+
+                                        var props = typeof element.getProps === 'function'
+                                            ? element.getProps(['x', 'y'], true)
+                                            : { x: element.x, y: element.y };
+
+                                        drawRoundedRect(ctx2, props.x - 10, props.y - 10, 20, 20, 6);
+                                        ctx2.fillStyle = 'rgba(220, 53, 69, 0.22)';
+                                        ctx2.fill();
+                                    });
+                                });
+
+                                ctx2.restore();
+                            }
+                        };
+
                         chartAnalisa = new Chart(ctx, {
                             type: 'line',
                             data: {
                                 labels: chartResponse.labels,
                                 datasets: chartResponse.datasets || []
                             },
+                            plugins: [temuanBackgroundPlugin],
                             options: {
                                 responsive: true,
                                 plugins: {
                                     tooltip: {
                                         mode: 'index',
-                                        intersect: false
+                                        intersect: false,
+                                        callbacks: {
+                                            afterBody: function (items) {
+                                                if (!items || items.length === 0) {
+                                                    return [];
+                                                }
+
+                                                var lines = [];
+                                                items.forEach(function (item) {
+                                                    var dataset = (chartResponse.datasets || [])[item.datasetIndex] || null;
+                                                    var temuan = dataset && Array.isArray(dataset.temuan)
+                                                        ? (dataset.temuan[item.dataIndex] || null)
+                                                        : null;
+
+                                                    if (!temuan || temuan.has_temuan !== true) {
+                                                        return;
+                                                    }
+
+                                                    lines.push(dataset.label + ': Temuan ' + temuan.count);
+                                                    lines.push('Gol: ' + (temuan.gol_detail || '-'));
+                                                });
+
+                                                return lines;
+                                            }
+                                        }
                                     }
                                 },
                                 interaction: {
