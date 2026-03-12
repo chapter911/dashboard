@@ -686,6 +686,69 @@ SQL;
     }
 
     /**
+     * @param list<array{label:string,start_date:string,end_date:string}> $periods
+     * @return list<array{label:string,start_date:string,end_date:string,count:int,has_temuan:bool,gol_counts:array<string,int>,gol_detail:string}>
+     */
+    public function getAnalisaTemuanPeriodsByIdpel(string $idpel, array $periods, bool $isAdmin, ?int $userUnitId, ?int $unitFilter = null): array
+    {
+        $allowedGols = ['P1', 'P2', 'P3', 'P4', 'K2'];
+        $results = [];
+        foreach ($periods as $period) {
+            $builder = $this->db->table('trn_p2tl')
+                ->select('UPPER(TRIM(gol)) AS gol, COUNT(*) AS total', false)
+                ->where('idpel', $idpel)
+                ->where('tanggal_register >=', $period['start_date'])
+                ->where('tanggal_register <=', $period['end_date'])
+                ->where('tanggal_register IS NOT NULL', null, false)
+                ->where("UPPER(TRIM(gol)) IN ('P1', 'P2', 'P3', 'P4', 'K2')", null, false)
+                ->groupBy('UPPER(TRIM(gol))');
+
+            if (! $isAdmin && $userUnitId !== null) {
+                $builder->where('unit_id', $userUnitId);
+            } elseif ($unitFilter !== null && $unitFilter > 0) {
+                $builder->where('unit_id', $unitFilter);
+            }
+
+            $rows = $builder->get()->getResultArray();
+            $golCounts = [];
+            foreach ($allowedGols as $gol) {
+                $golCounts[$gol] = 0;
+            }
+
+            $count = 0;
+            foreach ($rows as $row) {
+                $gol = strtoupper(trim((string) ($row['gol'] ?? '')));
+                if (! in_array($gol, $allowedGols, true)) {
+                    continue;
+                }
+
+                $rowCount = (int) ($row['total'] ?? 0);
+                $golCounts[$gol] += $rowCount;
+                $count += $rowCount;
+            }
+
+            $detailParts = [];
+            foreach ($allowedGols as $gol) {
+                if (($golCounts[$gol] ?? 0) > 0) {
+                    $detailParts[] = $gol . ': ' . $golCounts[$gol];
+                }
+            }
+
+            $results[] = [
+                'label' => $period['label'],
+                'start_date' => $period['start_date'],
+                'end_date' => $period['end_date'],
+                'count' => $count,
+                'has_temuan' => $count > 0,
+                'gol_counts' => $golCounts,
+                'gol_detail' => $detailParts !== [] ? implode(', ', $detailParts) : '-',
+            ];
+        }
+
+        return $results;
+    }
+
+    /**
      * @return list<array<string, mixed>>
      */
     public function getTargetByYear(int $year): array

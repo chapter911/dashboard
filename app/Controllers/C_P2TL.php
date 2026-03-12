@@ -736,6 +736,7 @@ class C_P2TL extends BaseController
             return $this->response->setJSON([
                 'labels' => ['Periode 1', 'Periode 2', 'Periode 3'],
                 'datasets' => [],
+                'period_highlights' => [],
             ]);
         }
 
@@ -781,13 +782,64 @@ class C_P2TL extends BaseController
             return $count > 0 ? ($total / $count) : null;
         };
 
+        $buildPeriodDateRange = static function (int $startIndex, int $endIndex, int $startYear): ?array {
+            if ($startIndex < 0 || $endIndex < $startIndex) {
+                return null;
+            }
+
+            $startMonth = ($startIndex % 12) + 1;
+            $endMonth = ($endIndex % 12) + 1;
+            $rangeStartYear = $startYear + intdiv($startIndex, 12);
+            $rangeEndYear = $startYear + intdiv($endIndex, 12);
+
+            $startDate = sprintf('%04d-%02d-01', $rangeStartYear, $startMonth);
+            $endDate = date('Y-m-t', strtotime(sprintf('%04d-%02d-01', $rangeEndYear, $endMonth)));
+
+            return [
+                'start_date' => $startDate,
+                'end_date' => $endDate,
+            ];
+        };
+
         $periodValues = [null, null, null];
+        $periodHighlights = [];
         if ($baseIndex !== null) {
             $periodValues = [
                 $calculateAverage($continuousSeries, $baseIndex - 11, $baseIndex),
                 $calculateAverage($continuousSeries, $baseIndex - 23, $baseIndex - 12),
                 $calculateAverage($continuousSeries, $baseIndex - 35, $baseIndex - 24),
             ];
+
+            $periodRanges = [];
+            $periodWindows = [
+                ['label' => 'Periode 1', 'start' => $baseIndex - 11, 'end' => $baseIndex],
+                ['label' => 'Periode 2', 'start' => $baseIndex - 23, 'end' => $baseIndex - 12],
+                ['label' => 'Periode 3', 'start' => $baseIndex - 35, 'end' => $baseIndex - 24],
+            ];
+
+            foreach ($periodWindows as $window) {
+                $range = $buildPeriodDateRange($window['start'], $window['end'], $tahunMulai);
+                if ($range === null) {
+                    $periodHighlights[] = [
+                        'label' => $window['label'],
+                        'start_date' => null,
+                        'end_date' => null,
+                        'count' => 0,
+                        'has_temuan' => false,
+                    ];
+                    continue;
+                }
+
+                $periodRanges[] = [
+                    'label' => $window['label'],
+                    'start_date' => $range['start_date'],
+                    'end_date' => $range['end_date'],
+                ];
+            }
+
+            if ($periodRanges !== []) {
+                $periodHighlights = $this->p2tlModel->getAnalisaTemuanPeriodsByIdpel($idpel, $periodRanges, $isAdmin, $userUnitId, $unitFilter);
+            }
         }
 
         $datasets = [[
@@ -803,6 +855,7 @@ class C_P2TL extends BaseController
         return $this->response->setJSON([
             'labels' => ['Periode 1', 'Periode 2', 'Periode 3'],
             'datasets' => $datasets,
+            'period_highlights' => $periodHighlights,
         ]);
     }
 

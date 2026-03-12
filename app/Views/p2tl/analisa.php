@@ -376,14 +376,79 @@ $selectedUnitName = (string) ($selectedUnitName ?? '');
                             chartAnalisa.destroy();
                         }
 
+                        var periodBackgroundPlugin = {
+                            id: 'periodBackgroundPlugin',
+                            beforeDatasetsDraw: function (chart, _args, pluginOptions) {
+                                var periods = (pluginOptions && pluginOptions.periods) || [];
+                                var xScale = chart.scales.x;
+                                var chartArea = chart.chartArea;
+                                if (!xScale || !chartArea || !periods.length) {
+                                    return;
+                                }
+
+                                var ctx2 = chart.ctx;
+                                ctx2.save();
+
+                                periods.forEach(function (period, index) {
+                                    if (!period || period.has_temuan !== true) {
+                                        return;
+                                    }
+
+                                    var center = xScale.getPixelForValue(index);
+                                    var prevCenter = index > 0 ? xScale.getPixelForValue(index - 1) : null;
+                                    var nextCenter = index < periods.length - 1 ? xScale.getPixelForValue(index + 1) : null;
+                                    var left = index === 0 ? chartArea.left : ((prevCenter + center) / 2);
+                                    var right = index === periods.length - 1 ? chartArea.right : ((center + nextCenter) / 2);
+
+                                    ctx2.fillStyle = 'rgba(220, 53, 69, 0.14)';
+                                    ctx2.fillRect(left, chartArea.top, right - left, chartArea.bottom - chartArea.top);
+                                });
+
+                                ctx2.restore();
+                            }
+                        };
+
                         chartAnalisa = new Chart(ctx, {
                             type: 'line',
                             data: {
                                 labels: chartResponse.labels,
                                 datasets: chartResponse.datasets || []
                             },
+                            plugins: [periodBackgroundPlugin],
                             options: {
                                 responsive: true,
+                                plugins: {
+                                    tooltip: {
+                                        callbacks: {
+                                            afterTitle: function (items) {
+                                                if (!items || items.length === 0) {
+                                                    return '';
+                                                }
+
+                                                var periodIndex = items[0].dataIndex;
+                                                var periodInfo = (chartResponse.period_highlights || [])[periodIndex] || null;
+                                                if (!periodInfo) {
+                                                    return '';
+                                                }
+
+                                                if (periodInfo.has_temuan) {
+                                                    return [
+                                                        'Temuan P2TL: ' + periodInfo.count,
+                                                        'Gol: ' + (periodInfo.gol_detail || '-')
+                                                    ];
+                                                }
+
+                                                return [
+                                                    'Temuan P2TL: 0',
+                                                    'Gol: -'
+                                                ];
+                                            }
+                                        }
+                                    },
+                                    periodBackgroundPlugin: {
+                                        periods: chartResponse.period_highlights || []
+                                    }
+                                },
                                 scales: {
                                     y: {
                                         beginAtZero: true
