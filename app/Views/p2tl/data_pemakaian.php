@@ -110,7 +110,8 @@ $selectedUnitName = (string) ($selectedUnitName ?? '');
         processing: true,
         searching: false,
         paging: true,
-        pageLength: 25,
+        pageLength: 10,
+        lengthChange: false,
         scrollX: true,
         order: [[0, 'asc']],
         ajax: {
