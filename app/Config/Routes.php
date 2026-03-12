@@ -126,6 +126,7 @@ $routes->get('C_P2TL/exportData', 'C_P2TL::exportData', ['filter' => 'auth']);
 $routes->get('C_P2TL/exportDataHitrate', 'C_P2TL::exportDataHitrate', ['filter' => 'auth']);
 
 $routes->get('C_P2TL/DataPemakaian', 'C_P2TL::DataPemakaian', ['filter' => 'auth']);
+$routes->post('C_P2TL/ajaxDashboardPemakaian', 'C_P2TL::ajaxDashboardPemakaian', ['filter' => 'auth']);
 $routes->get('C_P2TL/dataP2TL', 'C_P2TL::dataP2TL', ['filter' => 'auth']);
 $routes->post('C_P2TL/ajaxP2TL', 'C_P2TL::ajaxP2TL', ['filter' => 'auth']);
 $routes->post('C_P2TL/ajaxDataPemakaian', 'C_P2TL::ajaxDataPemakaian', ['filter' => 'auth']);

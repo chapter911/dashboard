@@ -390,7 +390,83 @@ class C_P2TL extends BaseController
 
     public function DataPemakaian(): string
     {
-        return $this->dataP2TL();
+        $isAdmin = (int) (session('group_id') ?? 0) === 1;
+        $userUnitId = session('unit_id') !== null ? (int) session('unit_id') : null;
+        $selectedUnitName = '';
+
+        if (! $isAdmin && $userUnitId !== null) {
+            foreach ($this->p2tlModel->getUnits() as $unit) {
+                if ((int) ($unit['unit_id'] ?? 0) === $userUnitId) {
+                    $selectedUnitName = (string) ($unit['unit_name'] ?? '');
+                    break;
+                }
+            }
+        }
+
+        return view('p2tl/data_pemakaian', [
+            'title' => 'Data Pemakaian P2TL',
+            'pageHeading' => 'Data Pemakaian P2TL',
+            'units' => $this->p2tlModel->getUnits(),
+            'currentYear' => (int) date('Y'),
+            'userGroupId' => (int) (session('group_id') ?? 0),
+            'selectedUnitId' => (int) (session('unit_id') ?? 0),
+            'selectedUnitName' => $selectedUnitName,
+        ]);
+    }
+
+    public function ajaxDashboardPemakaian(): ResponseInterface
+    {
+        $year = (int) ($this->request->getPost('tahun') ?? date('Y'));
+        $unit = trim((string) ($this->request->getPost('unit') ?? ''));
+
+        $isAdmin = (int) (session('group_id') ?? 0) === 1;
+        $userUnitId = session('unit_id') !== null ? (int) session('unit_id') : null;
+        $unitFilter = ($unit !== '' && $unit !== '*') ? (int) $unit : null;
+
+        $rawRows = $this->p2tlModel->getDataPemakaianDashboard($year, $unitFilter, $isAdmin, $userUnitId);
+
+        $grouped = [];
+        foreach ($rawRows as $row) {
+            $idpel = (string) ($row['idpel'] ?? '');
+            $tarif = (string) ($row['tarif'] ?? '');
+            $daya = (float) ($row['daya'] ?? 0);
+            $tahun = (int) ($row['tahun'] ?? $year);
+            $key = $idpel . '|' . $tarif . '|' . $daya . '|' . $tahun;
+
+            if (! isset($grouped[$key])) {
+                $grouped[$key] = [
+                    'idpel' => $idpel,
+                    'tarif' => $tarif,
+                    'daya' => $daya,
+                    'tahun' => $tahun,
+                    'months' => array_fill(1, 12, 0.0),
+                ];
+            }
+
+            $bulan = (int) ($row['bulan'] ?? 0);
+            if ($bulan >= 1 && $bulan <= 12) {
+                $grouped[$key]['months'][$bulan] = (float) ($row['pemakaian_kwh'] ?? 0);
+            }
+        }
+
+        $rows = [];
+        foreach ($grouped as $group) {
+            $line = [
+                $group['idpel'],
+                $group['tarif'],
+                number_format((float) $group['daya'], 0, ',', '.'),
+                (string) $group['tahun'],
+            ];
+
+            for ($m = 1; $m <= 12; $m++) {
+                $line[] = number_format((float) ($group['months'][$m] ?? 0), 0, ',', '.');
+            }
+
+            $rows[] = $line;
+        }
+
+        $this->response->setHeader('X-CSRF-TOKEN', csrf_hash());
+        return $this->response->setJSON(['data' => $rows]);
     }
 
     public function ajaxDataPemakaian(): ResponseInterface

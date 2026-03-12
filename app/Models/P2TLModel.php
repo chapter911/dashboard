@@ -408,6 +408,29 @@ SQL;
     }
 
     /**
+     * @return list<array<string, mixed>>
+     */
+    public function getDataPemakaianDashboard(int $year, ?int $unitId, bool $isAdmin, ?int $userUnitId): array
+    {
+        $builder = $this->db->table('trn_p2tl_analisa a')
+            ->select('a.idpel, a.tarif, a.daya, YEAR(a.periode) AS tahun, MONTH(a.periode) AS bulan, SUM(COALESCE(a.pemakaian_kwh, 0)) AS pemakaian_kwh', false)
+            ->where('YEAR(a.periode)', $year)
+            ->groupBy('a.idpel, a.tarif, a.daya, YEAR(a.periode), MONTH(a.periode)')
+            ->orderBy('a.idpel', 'ASC')
+            ->orderBy('a.tarif', 'ASC')
+            ->orderBy('a.daya', 'ASC')
+            ->orderBy('MONTH(a.periode)', 'ASC');
+
+        if (! $isAdmin && $userUnitId !== null) {
+            $builder->where('a.unit_id', $userUnitId);
+        } elseif ($unitId !== null && $unitId > 0) {
+            $builder->where('a.unit_id', $unitId);
+        }
+
+        return $builder->get()->getResultArray();
+    }
+
+    /**
      * @param list<string> $idpels
      *
      * @return array<string, string>
