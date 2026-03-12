@@ -280,6 +280,7 @@ $errorLogFiles = is_array($errorLogFiles ?? null) ? $errorLogFiles : [];
                         <?php endif; ?>
                     </div>
 
+                    <?php if (ENVIRONMENT !== 'production'): ?>
                     <div class="mb-3">
                         <label class="form-label" for="seeder_class">Seeder Class</label>
                         <select id="seeder_class" name="seeder_class" class="form-select">
@@ -307,11 +308,14 @@ $errorLogFiles = is_array($errorLogFiles ?? null) ? $errorLogFiles : [];
                         </select>
                         <div class="form-text">Dropdown memprioritaskan seeder yang belum dijalankan atau perlu diperbarui.</div>
                     </div>
+                    <?php endif; ?>
 
                     <div class="d-grid gap-2">
+                        <?php if (ENVIRONMENT !== 'production'): ?>
                         <button type="button" class="btn btn-outline-primary" id="btnRunSeeder">
                             <i class="ti ti-playstation-circle me-1"></i> Jalankan php spark db:seed
                         </button>
+                        <?php endif; ?>
                         <button type="button" class="btn btn-outline-warning" id="btnRunSnakeCaseScenario">
                             <i class="ti ti-writing-sign me-1"></i> Cek & Eksekusi Snake Case
                         </button>
