@@ -72,6 +72,11 @@ $selectedUnitName = (string) ($selectedUnitName ?? '');
                 <select class="form-select" id="temuan_status">
                     <option value="*">Semua Data</option>
                     <option value="has">Ada Temuan</option>
+                    <option value="P1">Temuan P1</option>
+                    <option value="P2">Temuan P2</option>
+                    <option value="P3">Temuan P3</option>
+                    <option value="P4">Temuan P4</option>
+                    <option value="K2">Temuan K2</option>
                     <option value="none">Tidak Ada Temuan</option>
                 </select>
             </div>
