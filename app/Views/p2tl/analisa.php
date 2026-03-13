@@ -613,8 +613,8 @@ body.modal-open {
                                     order.push({
                                         rowIndex: m,
                                         label: sourceMonthLabels[m],
-                                        baseIdx: null,
-                                        active: false,
+                                        baseIdx: 24 + m,
+                                        active: true,
                                         temuanYears: {},
                                     });
                                 }
