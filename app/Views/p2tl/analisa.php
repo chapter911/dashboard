@@ -29,6 +29,9 @@ $selectedUnitName = (string) ($selectedUnitName ?? '');
 #tableAnalisa tbody td:nth-child(12) {
     text-align: right;
 }
+body.modal-open {
+    padding-right: 0 !important;
+}
 </style>
 <div class="card">
     <div class="card-header d-flex justify-content-between align-items-center">
@@ -161,22 +164,22 @@ $selectedUnitName = (string) ($selectedUnitName ?? '');
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
             <div class="modal-body">
-                <div class="mb-3" id="detailMeta">
-                    <strong>Tarif:</strong> <span id="detailTarif">-</span>
-                    &nbsp; | &nbsp;
-                    <strong>Daya:</strong> <span id="detailDaya">-</span>
-                </div>
-                <div class="mt-3">
-                    <canvas id="chartAnalisa" height="120"></canvas>
-                    <div class="small text-muted mt-2">
-                        Keterangan: titik merah temuan dapat diklik untuk menampilkan urutan 12 bulan.
+                <div class="mb-3 d-flex flex-wrap justify-content-between align-items-start gap-2" id="detailMeta">
+                    <div>
+                        <strong>Tarif:</strong> <span id="detailTarif">-</span>
+                        &nbsp; | &nbsp;
+                        <strong>Daya:</strong> <span id="detailDaya">-</span>
                     </div>
-                    <div class="d-flex align-items-center gap-2 mt-2 flex-wrap">
+                    <div class="d-flex align-items-center gap-2" id="detailTemuanControls">
                         <select class="form-select form-select-sm d-none" id="selectTemuanAnalisa" style="min-width: 220px; max-width: 320px;">
                             <option value="">Pilih Temuan</option>
                         </select>
                         <button type="button" class="btn btn-sm btn-outline-secondary d-none text-nowrap" id="btnResetAnalisaView">Reset Tampilan</button>
                     </div>
+                </div>
+                <div class="mt-3">
+                    <canvas id="chartAnalisa" height="120"></canvas>
+                    <div class="small text-muted mt-2">Keterangan: titik merah temuan dapat diklik untuk menampilkan urutan 12 bulan.</div>
                 </div>
                 <div class="table-responsive">
                     <table class="table table-bordered">
@@ -215,6 +218,17 @@ $selectedUnitName = (string) ($selectedUnitName ?? '');
     var csrfFieldName = '<?= esc(csrf_token()) ?>';
     var csrfToken = '<?= esc(csrf_hash()) ?>';
     var chartAnalisa = null;
+    var detailModalEl = document.getElementById('modalDetail');
+    var detailModal = detailModalEl ? bootstrap.Modal.getOrCreateInstance(detailModalEl) : null;
+
+    if (detailModalEl) {
+        detailModalEl.addEventListener('shown.bs.modal', function () {
+            document.body.style.paddingRight = '';
+        });
+        detailModalEl.addEventListener('hidden.bs.modal', function () {
+            document.body.style.paddingRight = '';
+        });
+    }
 
     var table = $('#tableAnalisa').DataTable({
         processing: true,
@@ -811,8 +825,9 @@ $selectedUnitName = (string) ($selectedUnitName ?? '');
                     }
                 });
 
-                var detailModal = new bootstrap.Modal(document.getElementById('modalDetail'));
-                detailModal.show();
+                if (detailModal) {
+                    detailModal.show();
+                }
             },
             error: function (xhr) {
                 var fresh = xhr.getResponseHeader('X-CSRF-TOKEN');
