@@ -168,16 +168,14 @@ $selectedUnitName = (string) ($selectedUnitName ?? '');
                 </div>
                 <div class="mt-3">
                     <canvas id="chartAnalisa" height="120"></canvas>
-                    <div class="d-flex align-items-center justify-content-between gap-2 mt-2">
-                        <div class="small text-muted">
-                            Keterangan: titik merah temuan dapat diklik untuk menampilkan urutan 12 bulan.
-                        </div>
-                        <div class="d-flex align-items-center gap-2">
-                            <select class="form-select form-select-sm d-none" id="selectTemuanAnalisa" style="min-width: 220px;">
-                                <option value="">Pilih Temuan</option>
-                            </select>
-                            <button type="button" class="btn btn-sm btn-outline-secondary d-none" id="btnResetAnalisaView">Reset Tampilan</button>
-                        </div>
+                    <div class="small text-muted mt-2">
+                        Keterangan: titik merah temuan dapat diklik untuk menampilkan urutan 12 bulan.
+                    </div>
+                    <div class="d-flex align-items-center gap-2 mt-2 flex-wrap">
+                        <select class="form-select form-select-sm d-none" id="selectTemuanAnalisa" style="min-width: 220px; max-width: 320px;">
+                            <option value="">Pilih Temuan</option>
+                        </select>
+                        <button type="button" class="btn btn-sm btn-outline-secondary d-none text-nowrap" id="btnResetAnalisaView">Reset Tampilan</button>
                     </div>
                 </div>
                 <div class="table-responsive">
