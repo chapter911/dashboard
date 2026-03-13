@@ -29,7 +29,7 @@ $selectedUnitName = (string) ($selectedUnitName ?? '');
 #tableAnalisa tbody td:nth-child(12) {
     text-align: right;
 }
-.table-detail-temuan tr.temuan-highlight td:first-child {
+.table-detail-temuan td.temuan-value-highlight {
     background-color: rgba(220, 53, 69, 0.18) !important;
 }
 .form-select:focus,
@@ -360,16 +360,17 @@ body.modal-open {
                         : [];
                     while (continuousSeries.length < 36) { continuousSeries.push(null); }
 
-                    function buildDetailRowHtml(row, rowIndex, labelText, baseIdxOverride, isActive, hasTemuan) {
-                        var rowClass = hasTemuan === true ? ' class="temuan-highlight"' : '';
-                        var rowHtml = '<tr' + rowClass + '><td>' + labelText + '</td>';
+                    function buildDetailRowHtml(row, rowIndex, labelText, baseIdxOverride, isActive, temuanYears) {
+                        var rowHtml = '<tr><td>' + labelText + '</td>';
+                        var highlightedYears = temuanYears && typeof temuanYears === 'object' ? temuanYears : {};
 
                         $.each(years, function (_idx, year) {
                             var kwhData = row.pemakaian_kwh || {};
                             var value = isActive
                                 ? (Object.prototype.hasOwnProperty.call(kwhData, String(year)) ? kwhData[String(year)] : null)
                                 : null;
-                            rowHtml += '<td class="text-end">' + (value === null ? '-' : Number(value).toLocaleString('id-ID', { maximumFractionDigits: 0 })) + '</td>';
+                            var kwhClass = highlightedYears[String(year)] === true ? 'text-end temuan-value-highlight' : 'text-end';
+                            rowHtml += '<td class="' + kwhClass + '">' + (value === null ? '-' : Number(value).toLocaleString('id-ID', { maximumFractionDigits: 0 })) + '</td>';
                         });
 
                         $.each(years, function (_idx, year) {
@@ -377,7 +378,8 @@ body.modal-open {
                             var value = isActive
                                 ? (Object.prototype.hasOwnProperty.call(nyalaData, String(year)) ? nyalaData[String(year)] : null)
                                 : null;
-                            rowHtml += '<td class="text-end">' + (value === null ? '-' : Number(value).toLocaleString('id-ID', { maximumFractionDigits: 0 })) + '</td>';
+                            var nyalaClass = highlightedYears[String(year)] === true ? 'text-end temuan-value-highlight' : 'text-end';
+                            rowHtml += '<td class="' + nyalaClass + '">' + (value === null ? '-' : Number(value).toLocaleString('id-ID', { maximumFractionDigits: 0 })) + '</td>';
                         });
 
                         var bulanan = null;
@@ -424,7 +426,7 @@ body.modal-open {
                                 item.label || row.bulan,
                                 item.baseIdx,
                                 item.active !== false,
-                                item.hasTemuan === true
+                                item.temuanYears || {}
                             );
                         });
                         $('#detailBody').html(bodyHtml);
@@ -436,7 +438,7 @@ body.modal-open {
                             label: row.bulan,
                             baseIdx: 24 + idx,
                             active: true,
-                            hasTemuan: false,
+                            temuanYears: {},
                         };
                     });
 
@@ -587,13 +589,17 @@ body.modal-open {
                                 var monthName = sourceMonthLabels[monthIndex] || new Date(ym.year, ym.monthIndex, 1).toLocaleString('id-ID', { month: 'long' });
                                 var baseIdx = ((ym.year - (<?= (int) $selectedYear ?> - 2)) * 12) + monthIndex;
                                 var periodPoint = getSeriesPointByYearMonth(ym.year, ym.monthIndex);
+                                var temuanYears = {};
+                                if (periodPoint.temuan && periodPoint.temuan.has_temuan === true) {
+                                    temuanYears[String(ym.year)] = true;
+                                }
                                 monthMap[monthIndex] = {
                                     rowIndex: monthIndex,
                                     label: monthName,
                                     baseIdx: baseIdx,
                                     year: ym.year,
                                     active: true,
-                                    hasTemuan: !!(periodPoint.temuan && periodPoint.temuan.has_temuan === true),
+                                    temuanYears: temuanYears,
                                 };
                             }
 
@@ -607,7 +613,7 @@ body.modal-open {
                                         label: sourceMonthLabels[m],
                                         baseIdx: null,
                                         active: false,
-                                        hasTemuan: false,
+                                        temuanYears: {},
                                     });
                                 }
                             }
@@ -635,12 +641,17 @@ body.modal-open {
                         }
 
                         function refreshDefaultTemuanMarkers() {
-                            var periodeSatu = originalChartPayload.datasets[0] || null;
-                            var temuanSeries = periodeSatu && Array.isArray(periodeSatu.temuan) ? periodeSatu.temuan : [];
-
                             defaultDetailOrder.forEach(function (item) {
-                                var info = temuanSeries[item.rowIndex] || null;
-                                item.hasTemuan = !!(info && info.has_temuan === true);
+                                var mapByYear = {};
+
+                                (originalChartPayload.datasets || []).forEach(function (dataset) {
+                                    var year = String(parseYearFromLabel(dataset.label, Number($('#tahun').val() || new Date().getFullYear())));
+                                    var series = Array.isArray(dataset.temuan) ? dataset.temuan : [];
+                                    var info = series[item.rowIndex] || null;
+                                    mapByYear[year] = !!(info && info.has_temuan === true);
+                                });
+
+                                item.temuanYears = mapByYear;
                             });
                         }
 
