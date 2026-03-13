@@ -1232,8 +1232,7 @@ class Setting extends BaseController
             ])->setStatusCode(403);
         }
 
-        $refreshRemote = (string) ($this->request->getPost('refresh_remote') ?? '1') !== '0';
-        $status = $this->inspectGitPullStatus($refreshRemote);
+        $status = $this->inspectGitPullStatus();
 
         return $this->response->setJSON([
             'ok' => $status['ok'],
