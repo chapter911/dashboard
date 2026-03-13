@@ -787,6 +787,13 @@
                 };
             }
 
+            const gitPullRealtimeState = {
+                intervalId: null,
+                lastFullRefreshAt: 0,
+                pollMs: 180000,
+                fullRefreshMs: 900000
+            };
+
             function getCsrfEntry(formElement) {
                 if (!(formElement instanceof HTMLFormElement)) {
                     return null;
@@ -898,12 +905,18 @@
                 }
             }
 
-            async function requestGitPull(endpoint, formElement) {
+            async function requestGitPull(endpoint, formElement, extraData) {
                 const formData = new FormData(formElement);
                 const csrfEntry = getCsrfEntry(formElement);
 
                 if (csrfEntry && csrfEntry.name) {
                     formData.set(csrfEntry.name, csrfEntry.value);
+                }
+
+                if (extraData && typeof extraData === 'object') {
+                    Object.keys(extraData).forEach(function (key) {
+                        formData.set(key, String(extraData[key]));
+                    });
                 }
 
                 const response = await fetch(endpoint, {
@@ -930,11 +943,14 @@
                 return data;
             }
 
-            async function refreshGitPullStatus() {
+            async function refreshGitPullStatus(forceRemoteRefresh) {
                 const elements = getGitPullElements();
                 if (!elements.control || !(elements.form instanceof HTMLFormElement) || !(elements.button instanceof HTMLButtonElement)) {
                     return;
                 }
+
+                const now = Date.now();
+                const shouldDoFullRefresh = !!forceRemoteRefresh || (now - gitPullRealtimeState.lastFullRefreshAt) >= gitPullRealtimeState.fullRefreshMs;
 
                 setGitPullButtonState(elements.button, elements.badge, {
                     disabled: true,
@@ -943,11 +959,19 @@
                 });
 
                 try {
-                    const data = await requestGitPull(String(elements.control.dataset.statusUrl || ''), elements.form);
+                    const data = await requestGitPull(
+                        String(elements.control.dataset.statusUrl || ''),
+                        elements.form,
+                        { refresh_remote: shouldDoFullRefresh ? '1' : '0' }
+                    );
                     const pendingCount = Number(data.pendingCount || 0);
                     const title = pendingCount > 0
                         ? String(data.message || ('Terdapat ' + pendingCount + ' commit belum di-pull.'))
                         : String(data.message || 'Repository sudah terbaru.');
+
+                    if (shouldDoFullRefresh) {
+                        gitPullRealtimeState.lastFullRefreshAt = now;
+                    }
 
                     setGitPullButtonState(elements.button, elements.badge, {
                         disabled: false,
@@ -1013,8 +1037,33 @@
                     }
 
                     elements.button.dataset.running = '0';
-                    refreshGitPullStatus();
+                    refreshGitPullStatus(true);
                 }
+            }
+
+            function startGitPullRealtimePolling() {
+                const elements = getGitPullElements();
+                if (!elements.control) {
+                    return;
+                }
+
+                if (gitPullRealtimeState.intervalId !== null) {
+                    window.clearInterval(gitPullRealtimeState.intervalId);
+                }
+
+                gitPullRealtimeState.intervalId = window.setInterval(function () {
+                    if (document.visibilityState !== 'visible') {
+                        return;
+                    }
+
+                    refreshGitPullStatus(false);
+                }, gitPullRealtimeState.pollMs);
+
+                document.addEventListener('visibilitychange', function () {
+                    if (document.visibilityState === 'visible') {
+                        refreshGitPullStatus(false);
+                    }
+                });
             }
 
             document.addEventListener('DOMContentLoaded', function () {
@@ -1024,7 +1073,8 @@
                 }
 
                 loadStoredGitPullResult();
-                refreshGitPullStatus();
+                refreshGitPullStatus(true);
+                startGitPullRealtimePolling();
             });
         })();
     </script>
