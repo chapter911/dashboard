@@ -357,7 +357,7 @@ $hitrateTop = array_slice($hitrateSorted, 0, 5);
                         <strong><?= $totalTemuanKwh > 0 ? number_format($kwhP * 100 / $totalTemuanKwh, 1, ',', '.') : '0,0' ?>%</strong>
                     </div>
                     <div class="progress" style="height:8px;">
-                        <div class="progress-bar" role="progressbar" style="width: <?= $totalTemuanKwh > 0 ? number_format($kwhP * 100 / $totalTemuanKwh, 2, '.', '') : '0' ?>%"></div>
+                        <div class="progress-bar bg-primary" role="progressbar" style="width: <?= $totalTemuanKwh > 0 ? number_format($kwhP * 100 / $totalTemuanKwh, 2, '.', '') : '0' ?>%"></div>
                     </div>
                 </div>
                 <div class="mb-3">
@@ -366,7 +366,7 @@ $hitrateTop = array_slice($hitrateSorted, 0, 5);
                         <strong><?= $totalTemuanKwh > 0 ? number_format($kwhK * 100 / $totalTemuanKwh, 1, ',', '.') : '0,0' ?>%</strong>
                     </div>
                     <div class="progress" style="height:8px;">
-                        <div class="progress-bar bg-success" role="progressbar" style="width: <?= $totalTemuanKwh > 0 ? number_format($kwhK * 100 / $totalTemuanKwh, 2, '.', '') : '0' ?>%"></div>
+                        <div class="progress-bar bg-primary" role="progressbar" style="width: <?= $totalTemuanKwh > 0 ? number_format($kwhK * 100 / $totalTemuanKwh, 2, '.', '') : '0' ?>%"></div>
                     </div>
                 </div>
                 <div class="small text-muted mt-3">
