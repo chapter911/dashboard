@@ -357,7 +357,7 @@ body.modal-open {
                         : [];
                     while (continuousSeries.length < 36) { continuousSeries.push(null); }
 
-                    function buildDetailRowHtml(row, rowIndex, labelText) {
+                    function buildDetailRowHtml(row, rowIndex, labelText, baseIdxOverride) {
                         var rowHtml = '<tr><td>' + labelText + '</td>';
 
                         $.each(years, function (_idx, year) {
@@ -372,7 +372,7 @@ body.modal-open {
                             rowHtml += '<td class="text-end">' + (value === null ? '-' : Number(value).toLocaleString('id-ID', { maximumFractionDigits: 0 })) + '</td>';
                         });
 
-                        var baseIdx = 24 + rowIndex;
+                        var baseIdx = typeof baseIdxOverride === 'number' ? baseIdxOverride : (24 + rowIndex);
                         var bulanan = percentDiff(continuousSeries[baseIdx], continuousSeries[baseIdx - 1]);
                         var triwulan = percentDiff(
                             continuousWindowAvg(continuousSeries, baseIdx - 2, baseIdx),
@@ -403,7 +403,7 @@ body.modal-open {
                             if (!row) {
                                 return;
                             }
-                            bodyHtml += buildDetailRowHtml(row, item.rowIndex, item.label || row.bulan);
+                            bodyHtml += buildDetailRowHtml(row, item.rowIndex, item.label || row.bulan, item.baseIdx);
                         });
                         $('#detailBody').html(bodyHtml);
                     }
@@ -411,7 +411,8 @@ body.modal-open {
                     var defaultDetailOrder = detailRows.map(function (row, idx) {
                         return {
                             rowIndex: idx,
-                            label: row.bulan
+                            label: row.bulan,
+                            baseIdx: 24 + idx
                         };
                     });
 
@@ -527,6 +528,7 @@ body.modal-open {
                         var isCountdownMode = false;
                         var isTemuanSelectSyncing = false;
                         var temuanOptionMap = {};
+                        var seriesByYear = {};
 
                         function getSelectedWindowSize() {
                             var value = Number(rentangSelect.val() || 12);
@@ -544,39 +546,68 @@ body.modal-open {
                             return fallbackYear;
                         }
 
-                        function buildCountdownLabels(startYear, startMonthIndex, sourceMonthLabels, windowSize) {
-                            var labels = [];
-                            for (var step = 0; step < windowSize; step++) {
-                                var d = new Date(startYear, startMonthIndex, 1);
-                                d.setMonth(d.getMonth() - step);
-                                var monthName = sourceMonthLabels[d.getMonth()] || d.toLocaleString('id-ID', { month: 'long' });
-                                labels.push(monthName + ' ' + d.getFullYear());
-                            }
-                            return labels;
-                        }
-
-                        function reorderBackward(values, startMonthIndex, windowSize) {
-                            var output = [];
-                            for (var step = 0; step < windowSize; step++) {
-                                var idx = (startMonthIndex - step + 12) % 12;
-                                output.push(values[idx]);
-                            }
-                            return output;
+                        function shiftMonth(year, monthIndex, delta) {
+                            var d = new Date(year, monthIndex, 1);
+                            d.setMonth(d.getMonth() + delta);
+                            return {
+                                year: d.getFullYear(),
+                                monthIndex: d.getMonth(),
+                            };
                         }
 
                         function buildCountdownDetailOrder(startYear, startMonthIndex, sourceMonthLabels, windowSize) {
                             var order = [];
                             for (var offset = windowSize - 1; offset >= 0; offset--) {
-                                var d = new Date(startYear, startMonthIndex, 1);
-                                d.setMonth(d.getMonth() - offset);
-                                var monthIndex = d.getMonth();
-                                var monthName = sourceMonthLabels[monthIndex] || d.toLocaleString('id-ID', { month: 'long' });
+                                var ym = shiftMonth(startYear, startMonthIndex, -offset);
+                                var monthIndex = ym.monthIndex;
+                                var monthName = sourceMonthLabels[monthIndex] || new Date(ym.year, ym.monthIndex, 1).toLocaleString('id-ID', { month: 'long' });
+                                var baseIdx = ((ym.year - (<?= (int) $selectedYear ?> - 2)) * 12) + monthIndex;
                                 order.push({
                                     rowIndex: monthIndex,
-                                    label: monthName + ' ' + d.getFullYear()
+                                    label: monthName + ' ' + ym.year,
+                                    baseIdx: baseIdx,
                                 });
                             }
                             return order;
+                        }
+
+                        function buildSeriesByYear(sourceDatasets) {
+                            var map = {};
+                            sourceDatasets.forEach(function (dataset) {
+                                var year = parseYearFromLabel(dataset.label, Number($('#tahun').val() || new Date().getFullYear()));
+                                map[year] = {
+                                    data: Array.isArray(dataset.data) ? dataset.data.slice() : [],
+                                    temuan: Array.isArray(dataset.temuan) ? dataset.temuan.slice() : [],
+                                };
+                            });
+                            return map;
+                        }
+
+                        function getSeriesPointByYearMonth(year, monthIndex) {
+                            var yearData = seriesByYear[year];
+                            if (!yearData) {
+                                return {
+                                    value: null,
+                                    temuan: {
+                                        count: 0,
+                                        has_temuan: false,
+                                        gol_counts: {},
+                                        gol_detail: '-',
+                                    },
+                                };
+                            }
+
+                            return {
+                                value: (yearData.data && yearData.data.length > monthIndex) ? yearData.data[monthIndex] : null,
+                                temuan: (yearData.temuan && yearData.temuan.length > monthIndex)
+                                    ? yearData.temuan[monthIndex]
+                                    : {
+                                        count: 0,
+                                        has_temuan: false,
+                                        gol_counts: {},
+                                        gol_detail: '-',
+                                    },
+                            };
                         }
 
                         function buildTemuanOptions(sourceDatasets, sourceMonthLabels) {
@@ -681,33 +712,47 @@ body.modal-open {
                             var fallbackYear = Number($('#tahun').val() || new Date().getFullYear());
                             var clickedYear = parseYearFromLabel(clickedSourceDataset.label, fallbackYear);
                             var windowSize = getSelectedWindowSize();
-                            var newLabels = buildCountdownLabels(clickedYear, clickedDataIndex, sourceLabels, windowSize).reverse();
+                            var periodOffsets = [0, 1, 2];
+                            var newLabels = [];
 
-                            chartAnalisa.data.labels = newLabels;
-                            chartAnalisa.data.datasets = sourceDatasets.map(function (dataset) {
+                            chartAnalisa.data.datasets = sourceDatasets.map(function (dataset, datasetIndex) {
                                 var cloned = cloneDataset(dataset);
+                                var data = [];
+                                var temuan = [];
+                                var pointBackgroundColor = [];
+                                var pointBorderColor = [];
+                                var pointRadius = [];
+                                var offsetShift = periodOffsets[datasetIndex] * windowSize;
 
-                                if (Array.isArray(cloned.data) && cloned.data.length >= 12) {
-                                    cloned.data = reorderBackward(cloned.data, clickedDataIndex, windowSize).reverse();
+                                for (var i = 0; i < windowSize; i++) {
+                                    var stepFromClicked = (windowSize - 1 - i) + offsetShift;
+                                    var ym = shiftMonth(clickedYear, clickedDataIndex, -stepFromClicked);
+                                    var point = getSeriesPointByYearMonth(ym.year, ym.monthIndex);
+
+                                    if (datasetIndex === 0) {
+                                        var monthName = sourceLabels[ym.monthIndex] || new Date(ym.year, ym.monthIndex, 1).toLocaleString('id-ID', { month: 'long' });
+                                        newLabels.push(monthName + ' ' + ym.year);
+                                    }
+
+                                    data.push(point.value !== undefined ? point.value : null);
+                                    temuan.push(point.temuan);
+                                    var hasTemuan = !!(point.temuan && point.temuan.has_temuan === true);
+                                    pointBackgroundColor.push(hasTemuan ? '#dc3545' : dataset.borderColor);
+                                    pointBorderColor.push(hasTemuan ? '#dc3545' : '#ffffff');
+                                    pointRadius.push(hasTemuan ? 5 : 3);
                                 }
-                                if (Array.isArray(cloned.temuan) && cloned.temuan.length >= 12) {
-                                    cloned.temuan = reorderBackward(cloned.temuan, clickedDataIndex, windowSize).reverse();
-                                }
-                                if (Array.isArray(cloned.pointBackgroundColor) && cloned.pointBackgroundColor.length >= 12) {
-                                    cloned.pointBackgroundColor = reorderBackward(cloned.pointBackgroundColor, clickedDataIndex, windowSize).reverse();
-                                }
-                                if (Array.isArray(cloned.pointBorderColor) && cloned.pointBorderColor.length >= 12) {
-                                    cloned.pointBorderColor = reorderBackward(cloned.pointBorderColor, clickedDataIndex, windowSize).reverse();
-                                }
-                                if (Array.isArray(cloned.pointRadius) && cloned.pointRadius.length >= 12) {
-                                    cloned.pointRadius = reorderBackward(cloned.pointRadius, clickedDataIndex, windowSize).reverse();
-                                }
-                                if (Array.isArray(cloned.pointHoverRadius) && cloned.pointHoverRadius.length >= 12) {
-                                    cloned.pointHoverRadius = reorderBackward(cloned.pointHoverRadius, clickedDataIndex, windowSize).reverse();
-                                }
+
+                                cloned.data = data;
+                                cloned.temuan = temuan;
+                                cloned.pointBackgroundColor = pointBackgroundColor;
+                                cloned.pointBorderColor = pointBorderColor;
+                                cloned.pointRadius = pointRadius;
+                                cloned.pointHoverRadius = 7;
 
                                 return cloned;
                             });
+
+                            chartAnalisa.data.labels = newLabels;
 
                             chartAnalisa.update();
 
@@ -749,6 +794,7 @@ body.modal-open {
                             }
                         });
 
+                        seriesByYear = buildSeriesByYear(originalChartPayload.datasets);
                         populateTemuanSelect();
 
                         chartAnalisa = new Chart(ctx, {
