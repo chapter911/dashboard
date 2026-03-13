@@ -171,6 +171,11 @@ body.modal-open {
                         <strong>Daya:</strong> <span id="detailDaya">-</span>
                     </div>
                     <div class="d-flex align-items-center gap-2" id="detailTemuanControls">
+                        <select class="form-select form-select-sm" id="selectRentangAnalisa" style="width: 130px;">
+                            <option value="3">Triwulan</option>
+                            <option value="6">Semester</option>
+                            <option value="12" selected>Tahunan</option>
+                        </select>
                         <select class="form-select form-select-sm d-none" id="selectTemuanAnalisa" style="min-width: 220px; max-width: 320px;">
                             <option value="">Pilih Temuan</option>
                         </select>
@@ -280,6 +285,7 @@ body.modal-open {
                 var html = '';
                 var resetButton = $('#btnResetAnalisaView');
                 var temuanSelect = $('#selectTemuanAnalisa');
+                var rentangSelect = $('#selectRentangAnalisa');
                 resetButton.addClass('d-none');
                 temuanSelect.addClass('d-none').html('<option value="">Pilih Temuan</option>').val('');
 
@@ -520,6 +526,14 @@ body.modal-open {
                         var isTemuanSelectSyncing = false;
                         var temuanOptionMap = {};
 
+                        function getSelectedWindowSize() {
+                            var value = Number(rentangSelect.val() || 12);
+                            if (value !== 3 && value !== 6 && value !== 12) {
+                                return 12;
+                            }
+                            return value;
+                        }
+
                         function parseYearFromLabel(label, fallbackYear) {
                             var match = String(label || '').match(/\((\d{4})\)/);
                             if (match && match[1]) {
@@ -528,9 +542,9 @@ body.modal-open {
                             return fallbackYear;
                         }
 
-                        function buildCountdownLabels(startYear, startMonthIndex, sourceMonthLabels) {
+                        function buildCountdownLabels(startYear, startMonthIndex, sourceMonthLabels, windowSize) {
                             var labels = [];
-                            for (var step = 0; step < 12; step++) {
+                            for (var step = 0; step < windowSize; step++) {
                                 var d = new Date(startYear, startMonthIndex, 1);
                                 d.setMonth(d.getMonth() - step);
                                 var monthName = sourceMonthLabels[d.getMonth()] || d.toLocaleString('id-ID', { month: 'long' });
@@ -539,18 +553,18 @@ body.modal-open {
                             return labels;
                         }
 
-                        function reorderBackward(values, startMonthIndex) {
+                        function reorderBackward(values, startMonthIndex, windowSize) {
                             var output = [];
-                            for (var step = 0; step < 12; step++) {
+                            for (var step = 0; step < windowSize; step++) {
                                 var idx = (startMonthIndex - step + 12) % 12;
                                 output.push(values[idx]);
                             }
                             return output;
                         }
 
-                        function buildCountdownDetailOrder(startYear, startMonthIndex, sourceMonthLabels) {
+                        function buildCountdownDetailOrder(startYear, startMonthIndex, sourceMonthLabels, windowSize) {
                             var order = [];
-                            for (var offset = 11; offset >= 0; offset--) {
+                            for (var offset = windowSize - 1; offset >= 0; offset--) {
                                 var d = new Date(startYear, startMonthIndex, 1);
                                 d.setMonth(d.getMonth() - offset);
                                 var monthIndex = d.getMonth();
@@ -669,29 +683,30 @@ body.modal-open {
 
                             var fallbackYear = Number($('#tahun').val() || new Date().getFullYear());
                             var clickedYear = parseYearFromLabel(clickedSourceDataset.label, fallbackYear);
-                            var newLabels = buildCountdownLabels(clickedYear, clickedDataIndex, sourceLabels).reverse();
+                            var windowSize = getSelectedWindowSize();
+                            var newLabels = buildCountdownLabels(clickedYear, clickedDataIndex, sourceLabels, windowSize).reverse();
 
                             chartAnalisa.data.labels = newLabels;
                             chartAnalisa.data.datasets = sourceDatasets.map(function (dataset) {
                                 var cloned = cloneDataset(dataset);
 
                                 if (Array.isArray(cloned.data) && cloned.data.length >= 12) {
-                                    cloned.data = reorderBackward(cloned.data, clickedDataIndex).reverse();
+                                    cloned.data = reorderBackward(cloned.data, clickedDataIndex, windowSize).reverse();
                                 }
                                 if (Array.isArray(cloned.temuan) && cloned.temuan.length >= 12) {
-                                    cloned.temuan = reorderBackward(cloned.temuan, clickedDataIndex).reverse();
+                                    cloned.temuan = reorderBackward(cloned.temuan, clickedDataIndex, windowSize).reverse();
                                 }
                                 if (Array.isArray(cloned.pointBackgroundColor) && cloned.pointBackgroundColor.length >= 12) {
-                                    cloned.pointBackgroundColor = reorderBackward(cloned.pointBackgroundColor, clickedDataIndex).reverse();
+                                    cloned.pointBackgroundColor = reorderBackward(cloned.pointBackgroundColor, clickedDataIndex, windowSize).reverse();
                                 }
                                 if (Array.isArray(cloned.pointBorderColor) && cloned.pointBorderColor.length >= 12) {
-                                    cloned.pointBorderColor = reorderBackward(cloned.pointBorderColor, clickedDataIndex).reverse();
+                                    cloned.pointBorderColor = reorderBackward(cloned.pointBorderColor, clickedDataIndex, windowSize).reverse();
                                 }
                                 if (Array.isArray(cloned.pointRadius) && cloned.pointRadius.length >= 12) {
-                                    cloned.pointRadius = reorderBackward(cloned.pointRadius, clickedDataIndex).reverse();
+                                    cloned.pointRadius = reorderBackward(cloned.pointRadius, clickedDataIndex, windowSize).reverse();
                                 }
                                 if (Array.isArray(cloned.pointHoverRadius) && cloned.pointHoverRadius.length >= 12) {
-                                    cloned.pointHoverRadius = reorderBackward(cloned.pointHoverRadius, clickedDataIndex).reverse();
+                                    cloned.pointHoverRadius = reorderBackward(cloned.pointHoverRadius, clickedDataIndex, windowSize).reverse();
                                 }
 
                                 return cloned;
@@ -700,7 +715,7 @@ body.modal-open {
                             chartAnalisa.update();
 
                             if (response.has_data && typeof renderDetailRows === 'function') {
-                                renderDetailRows(buildCountdownDetailOrder(clickedYear, clickedDataIndex, sourceLabels));
+                                renderDetailRows(buildCountdownDetailOrder(clickedYear, clickedDataIndex, sourceLabels, windowSize));
                             }
 
                             isCountdownMode = true;
@@ -725,6 +740,17 @@ body.modal-open {
                             }
 
                             applyCountdownView(selected.datasetIndex, selected.monthIndex, true);
+                        });
+
+                        rentangSelect.off('change').on('change', function () {
+                            var selectedValue = String(temuanSelect.val() || '');
+                            var selected = selectedValue !== '' ? (temuanOptionMap[selectedValue] || null) : null;
+
+                            if (selected) {
+                                applyCountdownView(selected.datasetIndex, selected.monthIndex, true);
+                            } else if (isCountdownMode) {
+                                resetCountdownView();
+                            }
                         });
 
                         populateTemuanSelect();
