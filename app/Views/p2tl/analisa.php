@@ -177,9 +177,8 @@ body.modal-open {
                             <option value="12" selected>Tahunan</option>
                         </select>
                         <select class="form-select form-select-sm d-none" id="selectTemuanAnalisa" style="min-width: 220px; max-width: 320px;">
-                            <option value="">Pilih Temuan</option>
+                            <option value="">Semua Temuan</option>
                         </select>
-                        <button type="button" class="btn btn-sm btn-outline-secondary d-none text-nowrap" id="btnResetAnalisaView">Reset Tampilan</button>
                     </div>
                 </div>
                 <div class="mt-3">
@@ -283,11 +282,9 @@ body.modal-open {
                 $('#detailTitle').text('Detail IDPEL: ' + idpel);
                 var years = response.years || [];
                 var html = '';
-                var resetButton = $('#btnResetAnalisaView');
                 var temuanSelect = $('#selectTemuanAnalisa');
                 var rentangSelect = $('#selectRentangAnalisa');
-                resetButton.addClass('d-none');
-                temuanSelect.addClass('d-none').html('<option value="">Pilih Temuan</option>').val('');
+                temuanSelect.addClass('d-none').html('<option value="">Semua Temuan</option>').val('');
 
                 function formatPercent(value) {
                     if (value === null || Number.isNaN(value) || !Number.isFinite(value)) {
@@ -632,11 +629,11 @@ body.modal-open {
                             var options = buildTemuanOptions(originalChartPayload.datasets, originalChartPayload.labels);
 
                             if (options.length === 0) {
-                                temuanSelect.addClass('d-none').html('<option value="">Pilih Temuan</option>').val('');
+                                temuanSelect.addClass('d-none').html('<option value="">Semua Temuan</option>').val('');
                                 return;
                             }
 
-                            var htmlOptions = '<option value="">Pilih Temuan</option>';
+                            var htmlOptions = '<option value="">Semua Temuan</option>';
                             options.forEach(function (opt) {
                                 temuanOptionMap[opt.value] = opt;
                                 htmlOptions += '<option value="' + opt.value + '">' + opt.label + '</option>';
@@ -659,15 +656,10 @@ body.modal-open {
                             }
 
                             isCountdownMode = false;
-                            resetButton.addClass('d-none');
                             isTemuanSelectSyncing = true;
                             temuanSelect.val('');
                             isTemuanSelectSyncing = false;
                         }
-
-                        resetButton.off('click').on('click', function () {
-                            resetCountdownView();
-                        });
 
                         function applyCountdownView(clickedDatasetIndex, clickedDataIndex, forceApply) {
                             if (isCountdownMode && forceApply !== true) {
@@ -719,7 +711,6 @@ body.modal-open {
                             }
 
                             isCountdownMode = true;
-                            resetButton.removeClass('d-none');
                             setTemuanSelectionByPoint(clickedDatasetIndex, clickedDataIndex);
                         }
 
