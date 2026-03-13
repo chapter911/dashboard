@@ -394,44 +394,52 @@ $selectedUnitName = (string) ($selectedUnitName ?? '');
                             id: 'temuanBackgroundPlugin',
                             beforeDatasetsDraw: function (chart) {
                                 var ctx2 = chart.ctx;
-                                ctx2.save();
+                                var chartArea = chart.chartArea;
+                                var xScale = chart.scales && chart.scales.x;
 
-                                function drawRoundedRect(ctx, x, y, width, height, radius) {
-                                    var safeRadius = Math.min(radius, width / 2, height / 2);
-                                    ctx.beginPath();
-                                    ctx.moveTo(x + safeRadius, y);
-                                    ctx.lineTo(x + width - safeRadius, y);
-                                    ctx.quadraticCurveTo(x + width, y, x + width, y + safeRadius);
-                                    ctx.lineTo(x + width, y + height - safeRadius);
-                                    ctx.quadraticCurveTo(x + width, y + height, x + width - safeRadius, y + height);
-                                    ctx.lineTo(x + safeRadius, y + height);
-                                    ctx.quadraticCurveTo(x, y + height, x, y + height - safeRadius);
-                                    ctx.lineTo(x, y + safeRadius);
-                                    ctx.quadraticCurveTo(x, y, x + safeRadius, y);
-                                    ctx.closePath();
+                                if (!chartArea || !xScale) {
+                                    return;
                                 }
 
-                                (chart.data.datasets || []).forEach(function (dataset, datasetIndex) {
-                                    var meta = chart.getDatasetMeta(datasetIndex);
+                                ctx2.save();
+
+                                var monthCount = Array.isArray(chart.data.labels) ? chart.data.labels.length : 0;
+                                var highlightedMonths = new Array(monthCount).fill(false);
+
+                                (chart.data.datasets || []).forEach(function (dataset) {
                                     var temuan = Array.isArray(dataset.temuan) ? dataset.temuan : [];
-                                    if (!meta || meta.hidden) {
+                                    temuan.forEach(function (temuanInfo, index) {
+                                        if (temuanInfo && temuanInfo.has_temuan === true) {
+                                            highlightedMonths[index] = true;
+                                        }
+                                    });
+                                });
+
+                                highlightedMonths.forEach(function (isHighlighted, index) {
+                                    if (!isHighlighted) {
                                         return;
                                     }
 
-                                    meta.data.forEach(function (element, index) {
-                                        var temuanInfo = temuan[index] || null;
-                                        if (!element || !temuanInfo || temuanInfo.has_temuan !== true) {
-                                            return;
-                                        }
+                                    var centerX = xScale.getPixelForValue(index);
+                                    var prevX = index > 0 ? xScale.getPixelForValue(index - 1) : null;
+                                    var nextX = index < monthCount - 1 ? xScale.getPixelForValue(index + 1) : null;
+                                    var bandWidth;
 
-                                        var props = typeof element.getProps === 'function'
-                                            ? element.getProps(['x', 'y'], true)
-                                            : { x: element.x, y: element.y };
+                                    if (prevX !== null && nextX !== null) {
+                                        bandWidth = Math.abs(nextX - prevX) / 2;
+                                    } else if (nextX !== null) {
+                                        bandWidth = Math.abs(nextX - centerX);
+                                    } else if (prevX !== null) {
+                                        bandWidth = Math.abs(centerX - prevX);
+                                    } else {
+                                        bandWidth = chartArea.right - chartArea.left;
+                                    }
 
-                                        drawRoundedRect(ctx2, props.x - 10, props.y - 10, 20, 20, 6);
-                                        ctx2.fillStyle = 'rgba(220, 53, 69, 0.22)';
-                                        ctx2.fill();
-                                    });
+                                    var left = Math.max(chartArea.left, centerX - (bandWidth / 2));
+                                    var right = Math.min(chartArea.right, centerX + (bandWidth / 2));
+
+                                    ctx2.fillStyle = 'rgba(220, 53, 69, 0.18)';
+                                    ctx2.fillRect(left, chartArea.top, Math.max(0, right - left), chartArea.bottom - chartArea.top);
                                 });
 
                                 ctx2.restore();
