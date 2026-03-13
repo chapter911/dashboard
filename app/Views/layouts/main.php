@@ -476,6 +476,24 @@
             </div>
         </div>
     </div>
+    <div class="modal fade" id="gitPullResultModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="gitPullResultModalTitle">Hasil Git Pull</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <p class="mb-2" id="gitPullResultModalMessage">Proses git pull selesai dijalankan.</p>
+                    <div class="small text-muted mb-3" id="gitPullResultModalMeta"></div>
+                    <pre id="gitPullResultOutput" class="bg-light border rounded p-3 mb-0" style="max-height:320px;overflow:auto;white-space:pre-wrap;">-</pre>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-primary" data-bs-dismiss="modal">Tutup</button>
+                </div>
+            </div>
+        </div>
+    </div>
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
     <script>
         (function () {
@@ -751,6 +769,263 @@
                     modal.show();
                 }
             }
+        })();
+    </script>
+    <script>
+        (function () {
+            'use strict';
+
+            const storageKey = 'dashboard:git-pull-result';
+            const csrfHeaderName = '<?= esc(csrf_header()) ?>';
+
+            function getGitPullElements() {
+                return {
+                    control: document.getElementById('navbarGitPullControl'),
+                    form: document.getElementById('navbar-git-pull-form'),
+                    button: document.getElementById('navbarGitPullButton'),
+                    badge: document.getElementById('navbarGitPullBadge')
+                };
+            }
+
+            function getCsrfEntry(formElement) {
+                if (!(formElement instanceof HTMLFormElement)) {
+                    return null;
+                }
+
+                const hiddenInput = formElement.querySelector('input[type="hidden"]');
+                if (!hiddenInput || !hiddenInput.name) {
+                    return null;
+                }
+
+                return {
+                    name: hiddenInput.name,
+                    value: hiddenInput.value || ''
+                };
+            }
+
+            function updateGitPullCsrf(formElement, token, hash) {
+                if (!(formElement instanceof HTMLFormElement) || !token || !hash) {
+                    return;
+                }
+
+                const csrfInput = formElement.querySelector('input[name="' + token + '"]');
+                if (csrfInput) {
+                    csrfInput.value = hash;
+                }
+            }
+
+            function setGitPullButtonState(button, badge, options) {
+                if (!(button instanceof HTMLButtonElement)) {
+                    return;
+                }
+
+                const state = options && typeof options === 'object' ? options : {};
+                const pendingCount = Number(state.pendingCount || 0);
+                const disabled = !!state.disabled;
+                const isChecking = !!state.isChecking;
+                const hasUpdates = pendingCount > 0;
+                const defaultLabel = 'Git Pull';
+
+                button.disabled = disabled;
+                button.classList.remove('btn-outline-secondary', 'btn-outline-danger', 'btn-outline-success');
+                button.classList.add(hasUpdates ? 'btn-outline-danger' : 'btn-outline-secondary');
+                button.setAttribute('title', String(state.title || defaultLabel));
+
+                const labelElement = button.querySelector('span.d-none.d-md-inline');
+                if (labelElement) {
+                    labelElement.textContent = isChecking ? 'Checking...' : defaultLabel;
+                }
+
+                if (badge instanceof HTMLElement) {
+                    if (hasUpdates) {
+                        badge.textContent = String(pendingCount);
+                        badge.classList.remove('d-none');
+                    } else {
+                        badge.textContent = '0';
+                        badge.classList.add('d-none');
+                    }
+                }
+            }
+
+            function showGitPullResultModal(payload) {
+                if (!payload || !window.bootstrap || typeof window.bootstrap.Modal !== 'function') {
+                    return;
+                }
+
+                const titleElement = document.getElementById('gitPullResultModalTitle');
+                const messageElement = document.getElementById('gitPullResultModalMessage');
+                const metaElement = document.getElementById('gitPullResultModalMeta');
+                const outputElement = document.getElementById('gitPullResultOutput');
+                const modalElement = document.getElementById('gitPullResultModal');
+
+                if (!modalElement || !titleElement || !messageElement || !metaElement || !outputElement) {
+                    return;
+                }
+
+                titleElement.textContent = payload.ok === false ? 'Git Pull Gagal' : 'Hasil Git Pull';
+                messageElement.textContent = String(payload.message || 'Proses git pull selesai dijalankan.');
+
+                const metaParts = [];
+                if (payload.branch) {
+                    metaParts.push('Branch: ' + String(payload.branch));
+                }
+                if (payload.upstream) {
+                    metaParts.push('Upstream: ' + String(payload.upstream));
+                }
+                if (payload.reloadedAt) {
+                    metaParts.push('Reload: ' + String(payload.reloadedAt));
+                }
+
+                metaElement.textContent = metaParts.join(' | ');
+                outputElement.textContent = String(payload.output || '-');
+
+                const modal = new window.bootstrap.Modal(modalElement);
+                modal.show();
+            }
+
+            function loadStoredGitPullResult() {
+                try {
+                    const raw = window.sessionStorage.getItem(storageKey);
+                    if (!raw) {
+                        return;
+                    }
+
+                    window.sessionStorage.removeItem(storageKey);
+                    const payload = JSON.parse(raw);
+                    showGitPullResultModal(payload);
+                } catch (_error) {
+                    window.sessionStorage.removeItem(storageKey);
+                }
+            }
+
+            async function requestGitPull(endpoint, formElement) {
+                const formData = new FormData(formElement);
+                const csrfEntry = getCsrfEntry(formElement);
+
+                if (csrfEntry && csrfEntry.name) {
+                    formData.set(csrfEntry.name, csrfEntry.value);
+                }
+
+                const response = await fetch(endpoint, {
+                    method: 'POST',
+                    body: formData,
+                    headers: {
+                        'X-Requested-With': 'XMLHttpRequest',
+                        [csrfHeaderName]: csrfEntry ? csrfEntry.value : '',
+                        'X-CSRF-TOKEN': csrfEntry ? csrfEntry.value : ''
+                    }
+                });
+
+                const contentType = String(response.headers.get('content-type') || '');
+                const data = contentType.indexOf('application/json') !== -1
+                    ? await response.json()
+                    : { ok: false, message: await response.text(), output: '' };
+
+                updateGitPullCsrf(formElement, data.csrfToken, data.csrfHash);
+
+                if (!response.ok || !data.ok) {
+                    throw new Error((data && data.message) ? data.message : 'Permintaan git pull gagal diproses.');
+                }
+
+                return data;
+            }
+
+            async function refreshGitPullStatus() {
+                const elements = getGitPullElements();
+                if (!elements.control || !(elements.form instanceof HTMLFormElement) || !(elements.button instanceof HTMLButtonElement)) {
+                    return;
+                }
+
+                setGitPullButtonState(elements.button, elements.badge, {
+                    disabled: true,
+                    isChecking: true,
+                    title: 'Memeriksa status update repository...'
+                });
+
+                try {
+                    const data = await requestGitPull(String(elements.control.dataset.statusUrl || ''), elements.form);
+                    const pendingCount = Number(data.pendingCount || 0);
+                    const title = pendingCount > 0
+                        ? String(data.message || ('Terdapat ' + pendingCount + ' commit belum di-pull.'))
+                        : String(data.message || 'Repository sudah terbaru.');
+
+                    setGitPullButtonState(elements.button, elements.badge, {
+                        disabled: false,
+                        pendingCount: pendingCount,
+                        title: title
+                    });
+                } catch (error) {
+                    setGitPullButtonState(elements.button, elements.badge, {
+                        disabled: true,
+                        title: error && error.message ? error.message : 'Status Git Pull tidak dapat diperiksa.'
+                    });
+                }
+            }
+
+            async function runNavbarGitPull() {
+                const elements = getGitPullElements();
+                if (!elements.control || !(elements.form instanceof HTMLFormElement) || !(elements.button instanceof HTMLButtonElement)) {
+                    return;
+                }
+
+                if (elements.button.disabled || elements.button.dataset.running === '1') {
+                    return;
+                }
+
+                elements.button.dataset.running = '1';
+                setGitPullButtonState(elements.button, elements.badge, {
+                    disabled: true,
+                    title: 'Menjalankan git pull...'
+                });
+
+                if (window.Swal) {
+                    window.Swal.fire({
+                        title: 'Menjalankan Git Pull',
+                        text: 'Mohon tunggu, repository sedang diperbarui.',
+                        allowOutsideClick: false,
+                        allowEscapeKey: false,
+                        showConfirmButton: false,
+                        didOpen: function () {
+                            window.Swal.showLoading();
+                        }
+                    });
+                }
+
+                try {
+                    const data = await requestGitPull(String(elements.control.dataset.runUrl || ''), elements.form);
+                    window.sessionStorage.setItem(storageKey, JSON.stringify({
+                        ok: true,
+                        message: data.message || 'Git pull selesai dijalankan.',
+                        output: data.output || '-',
+                        branch: data.branch || '',
+                        upstream: data.upstream || '',
+                        reloadedAt: new Date().toLocaleString('id-ID')
+                    }));
+
+                    window.location.reload();
+                } catch (error) {
+                    if (window.Swal) {
+                        window.Swal.fire({
+                            icon: 'error',
+                            title: 'Git Pull gagal',
+                            text: error && error.message ? error.message : 'Perintah git pull tidak berhasil dijalankan.'
+                        });
+                    }
+
+                    elements.button.dataset.running = '0';
+                    refreshGitPullStatus();
+                }
+            }
+
+            document.addEventListener('DOMContentLoaded', function () {
+                const elements = getGitPullElements();
+                if (elements.button) {
+                    elements.button.addEventListener('click', runNavbarGitPull);
+                }
+
+                loadStoredGitPullResult();
+                refreshGitPullStatus();
+            });
         })();
     </script>
     <script>

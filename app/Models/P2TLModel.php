@@ -541,20 +541,21 @@ SQL;
         }
 
         $allowedTemuanStatuses = ['P1', 'P2', 'P3', 'P4', 'K2'];
+        $normalizedGolSql = "REPLACE(REPLACE(UPPER(TRIM(p.gol)), 'TEMUAN - ', ''), 'TEMUAN-', '')";
         if ($temuanStatus === 'has' || $temuanStatus === 'none' || in_array($temuanStatus, $allowedTemuanStatuses, true)) {
             $temuanExistsSql = "EXISTS (
                 SELECT 1
                 FROM trn_p2tl p
-                WHERE p.idpel = x.idpel
+                WHERE p.idpel COLLATE utf8mb4_general_ci = x.idpel
                     AND p.tanggal_register IS NOT NULL
                     AND YEAR(p.tanggal_register) = ?";
             $temuanBinds = [$year];
 
             if (in_array($temuanStatus, $allowedTemuanStatuses, true)) {
-                $temuanExistsSql .= ' AND UPPER(TRIM(p.gol)) = ?';
+                $temuanExistsSql .= ' AND ' . $normalizedGolSql . ' = ?';
                 $temuanBinds[] = $temuanStatus;
             } else {
-                $temuanExistsSql .= " AND UPPER(TRIM(p.gol)) IN ('P1', 'P2', 'P3', 'P4', 'K2')";
+                $temuanExistsSql .= " AND " . $normalizedGolSql . " IN ('P1', 'P2', 'P3', 'P4', 'K2')";
             }
 
             if (! $isAdmin && $userUnitId !== null) {

@@ -1166,15 +1166,86 @@ class Setting extends BaseController
             ])->setStatusCode(403);
         }
 
+        $status = $this->inspectGitPullStatus();
+        if (! $status['ok']) {
+            return $this->response->setJSON([
+                'ok' => false,
+                'message' => $status['message'],
+                'output' => $status['output'],
+                'branch' => $status['branch'],
+                'upstream' => $status['upstream'],
+                'pendingCount' => $status['pendingCount'],
+                'aheadCount' => $status['aheadCount'],
+                'csrfToken' => csrf_token(),
+                'csrfHash' => csrf_hash(),
+            ])->setStatusCode(500);
+        }
+
         $result = $this->executeShellCommand('git -C ' . escapeshellarg(ROOTPATH) . ' pull --ff-only');
+        $latestStatus = $result['ok'] ? $this->inspectGitPullStatus(false) : [
+            'branch' => $status['branch'],
+            'upstream' => $status['upstream'],
+            'pendingCount' => $status['pendingCount'],
+            'aheadCount' => $status['aheadCount'],
+        ];
 
         return $this->response->setJSON([
             'ok' => $result['ok'],
             'message' => $result['message'],
             'output' => $result['output'],
+            'branch' => $latestStatus['branch'] ?? '',
+            'upstream' => $latestStatus['upstream'] ?? '',
+            'pendingCount' => $latestStatus['pendingCount'] ?? 0,
+            'aheadCount' => $latestStatus['aheadCount'] ?? 0,
             'csrfToken' => csrf_token(),
             'csrfHash' => csrf_hash(),
         ])->setStatusCode($result['ok'] ? 200 : 500);
+    }
+
+    public function gitPullStatus()
+    {
+        if (! $this->canRunMaintenanceTools()) {
+            return $this->response->setJSON([
+                'ok' => false,
+                'message' => 'Anda tidak memiliki hak akses untuk menjalankan command maintenance.',
+                'output' => '',
+                'pendingCount' => 0,
+                'aheadCount' => 0,
+                'branch' => '',
+                'upstream' => '',
+                'csrfToken' => csrf_token(),
+                'csrfHash' => csrf_hash(),
+            ])->setStatusCode(403);
+        }
+
+        if (ENVIRONMENT !== 'production') {
+            return $this->response->setJSON([
+                'ok' => false,
+                'message' => 'Fitur git pull hanya tersedia di production.',
+                'output' => '',
+                'pendingCount' => 0,
+                'aheadCount' => 0,
+                'branch' => '',
+                'upstream' => '',
+                'csrfToken' => csrf_token(),
+                'csrfHash' => csrf_hash(),
+            ])->setStatusCode(403);
+        }
+
+        $status = $this->inspectGitPullStatus();
+
+        return $this->response->setJSON([
+            'ok' => $status['ok'],
+            'message' => $status['message'],
+            'output' => $status['output'],
+            'pendingCount' => $status['pendingCount'],
+            'aheadCount' => $status['aheadCount'],
+            'branch' => $status['branch'],
+            'upstream' => $status['upstream'],
+            'hasUpdates' => $status['pendingCount'] > 0,
+            'csrfToken' => csrf_token(),
+            'csrfHash' => csrf_hash(),
+        ])->setStatusCode($status['ok'] ? 200 : 500);
     }
 
     public function listSeederOptions()
@@ -1376,7 +1447,122 @@ class Setting extends BaseController
 
     private function canRunMaintenanceTools(): bool
     {
-        return (int) session('group_id') === 1;
+        return $this->resolveIsSuperAdministrator();
+    }
+
+    /**
+     * @return array{ok:bool,message:string,output:string,pendingCount:int,aheadCount:int,branch:string,upstream:string}
+     */
+    private function inspectGitPullStatus(bool $refreshRemote = true): array
+    {
+        if (! $this->isShellFunctionEnabled('exec')) {
+            return [
+                'ok' => false,
+                'message' => 'Perintah gagal dijalankan karena fungsi exec() dinonaktifkan di server.',
+                'output' => 'Server hosting menonaktifkan exec(). Jalankan perintah lewat SSH/terminal server atau minta provider mengaktifkan fungsi shell execution.',
+                'pendingCount' => 0,
+                'aheadCount' => 0,
+                'branch' => '',
+                'upstream' => '',
+            ];
+        }
+
+        $rootPath = escapeshellarg(ROOTPATH);
+        $gitCheck = $this->executeShellCommandDetailed('git -C ' . $rootPath . ' rev-parse --is-inside-work-tree');
+        if (! $gitCheck['ok']) {
+            return [
+                'ok' => false,
+                'message' => 'Direktori aplikasi bukan working tree git yang valid.',
+                'output' => $gitCheck['output'],
+                'pendingCount' => 0,
+                'aheadCount' => 0,
+                'branch' => '',
+                'upstream' => '',
+            ];
+        }
+
+        if ($refreshRemote) {
+            $fetchResult = $this->executeShellCommandDetailed('git -C ' . $rootPath . ' fetch --quiet');
+            if (! $fetchResult['ok']) {
+                return [
+                    'ok' => false,
+                    'message' => 'Gagal memeriksa update dari remote repository.',
+                    'output' => $fetchResult['output'],
+                    'pendingCount' => 0,
+                    'aheadCount' => 0,
+                    'branch' => '',
+                    'upstream' => '',
+                ];
+            }
+        }
+
+        $branchResult = $this->executeShellCommandDetailed('git -C ' . $rootPath . ' rev-parse --abbrev-ref HEAD');
+        if (! $branchResult['ok']) {
+            return [
+                'ok' => false,
+                'message' => 'Gagal membaca branch aktif repository.',
+                'output' => $branchResult['output'],
+                'pendingCount' => 0,
+                'aheadCount' => 0,
+                'branch' => '',
+                'upstream' => '',
+            ];
+        }
+
+        $upstreamResult = $this->executeShellCommandDetailed(
+            'git -C ' . $rootPath . ' rev-parse --abbrev-ref --symbolic-full-name ' . escapeshellarg('@{upstream}')
+        );
+        if (! $upstreamResult['ok']) {
+            return [
+                'ok' => false,
+                'message' => 'Branch aktif belum terhubung ke upstream remote.',
+                'output' => $upstreamResult['output'],
+                'pendingCount' => 0,
+                'aheadCount' => 0,
+                'branch' => trim($branchResult['output']),
+                'upstream' => '',
+            ];
+        }
+
+        $countResult = $this->executeShellCommandDetailed(
+            'git -C ' . $rootPath . ' rev-list --left-right --count ' . escapeshellarg('HEAD...@{upstream}')
+        );
+        if (! $countResult['ok']) {
+            return [
+                'ok' => false,
+                'message' => 'Gagal menghitung selisih commit terhadap upstream.',
+                'output' => $countResult['output'],
+                'pendingCount' => 0,
+                'aheadCount' => 0,
+                'branch' => trim($branchResult['output']),
+                'upstream' => trim($upstreamResult['output']),
+            ];
+        }
+
+        $counts = preg_split('/\s+/', trim($countResult['output']));
+        $aheadCount = isset($counts[0]) ? (int) $counts[0] : 0;
+        $pendingCount = isset($counts[1]) ? (int) $counts[1] : 0;
+        $branch = trim($branchResult['output']);
+        $upstream = trim($upstreamResult['output']);
+        $statusMessage = $pendingCount > 0
+            ? 'Terdapat ' . $pendingCount . ' commit yang belum di-pull dari ' . $upstream . '.'
+            : 'Repository sudah terbaru.';
+        $statusOutput = implode("\n", array_filter([
+            'Branch aktif: ' . $branch,
+            'Upstream: ' . $upstream,
+            'Commit lokal belum di-push: ' . $aheadCount,
+            'Commit remote belum di-pull: ' . $pendingCount,
+        ], static fn ($line) => $line !== ''));
+
+        return [
+            'ok' => true,
+            'message' => $statusMessage,
+            'output' => $statusOutput,
+            'pendingCount' => $pendingCount,
+            'aheadCount' => $aheadCount,
+            'branch' => $branch,
+            'upstream' => $upstream,
+        ];
     }
 
     /**
@@ -1553,6 +1739,31 @@ class Setting extends BaseController
             'ok' => $exitCode === 0,
             'message' => $exitCode === 0 ? 'Perintah berhasil dijalankan.' : 'Perintah gagal dijalankan.',
             'output' => $commandOutput,
+        ];
+    }
+
+    /**
+     * @return array{ok:bool,output:string,exitCode:int}
+     */
+    private function executeShellCommandDetailed(string $command): array
+    {
+        if (! $this->isShellFunctionEnabled('exec')) {
+            return [
+                'ok' => false,
+                'output' => 'Server hosting menonaktifkan exec().',
+                'exitCode' => 127,
+            ];
+        }
+
+        $output = [];
+        $exitCode = 1;
+
+        exec($command . ' 2>&1', $output, $exitCode);
+
+        return [
+            'ok' => $exitCode === 0,
+            'output' => trim(implode("\n", $output)),
+            'exitCode' => $exitCode,
         ];
     }
 

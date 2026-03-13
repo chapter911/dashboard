@@ -24,6 +24,7 @@ $routes->post('setting/application', 'Setting::updateApplication', ['filter' => 
 $routes->post('setting/application/tools/migrate', 'Setting::runMigrateCommand', ['filter' => 'auth']);
 $routes->post('setting/application/tools/seed', 'Setting::runSeederCommand', ['filter' => 'auth']);
 $routes->post('setting/application/tools/snake-case', 'Setting::runSnakeCaseScenario', ['filter' => 'auth']);
+$routes->post('setting/application/tools/git-pull/status', 'Setting::gitPullStatus', ['filter' => 'auth']);
 $routes->post('setting/application/tools/git-pull', 'Setting::runGitPullCommand', ['filter' => 'auth']);
 $routes->get('setting/application/tools/seeders', 'Setting::listSeederOptions', ['filter' => 'auth']);
 $routes->post('setting/application/sync/init', 'Setting::initProductionSync', ['filter' => 'auth']);

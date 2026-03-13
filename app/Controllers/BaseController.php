@@ -46,6 +46,12 @@ abstract class BaseController extends Controller
         $this->shareBrandingSettings();
         $this->shareSettingMenu();
         $this->shareSidebarMenus();
+        $this->shareUserPrivileges();
+    }
+
+    private function shareUserPrivileges(): void
+    {
+        service('renderer')->setVar('isSuperAdministrator', $this->resolveIsSuperAdministrator());
     }
 
     private function shareBrandingSettings(): void
@@ -308,6 +314,35 @@ abstract class BaseController extends Controller
         }
 
         service('renderer')->setVar('sidebarMenus', $sidebarMenus);
+    }
+
+    protected function resolveIsSuperAdministrator(): bool
+    {
+        $groupId = (int) (session('group_id') ?? 0);
+        if ($groupId === 1) {
+            return true;
+        }
+
+        if ($groupId < 1) {
+            return false;
+        }
+
+        try {
+            $row = db_connect()
+                ->table('mst_user_group')
+                ->select('group_name')
+                ->where('group_id', $groupId)
+                ->get()
+                ->getRowArray();
+
+            if (! is_array($row)) {
+                return false;
+            }
+
+            return strtolower(trim((string) ($row['group_name'] ?? ''))) === 'super administrator';
+        } catch (Throwable $e) {
+            return false;
+        }
     }
 
     private function normalizeMenuLink(string $link): string

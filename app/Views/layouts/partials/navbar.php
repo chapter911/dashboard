@@ -6,6 +6,7 @@
     $profilePhotoPath = trim((string) session('profile_photo_path'));
     $profilePhotoUrl = $profilePhotoPath !== '' ? base_url($profilePhotoPath) : null;
     $isDevelopmentEnv = ENVIRONMENT === 'development';
+    $canShowGitPull = ENVIRONMENT === 'production' && ! empty($isSuperAdministrator);
     ?>
     <div class="layout-menu-toggle navbar-nav align-items-xl-center me-3 me-xl-0 d-xl-none">
         <a class="nav-item nav-link px-0 me-xl-4" href="javascript:void(0)">
@@ -22,6 +23,30 @@
         </div>
 
         <ul class="navbar-nav flex-row align-items-center ms-auto">
+            <?php if ($canShowGitPull): ?>
+                <li class="nav-item me-2">
+                    <form id="navbar-git-pull-form" class="m-0">
+                        <?= csrf_field() ?>
+                        <div
+                            id="navbarGitPullControl"
+                            class="d-flex align-items-center"
+                            data-status-url="<?= site_url('setting/application/tools/git-pull/status') ?>"
+                            data-run-url="<?= site_url('setting/application/tools/git-pull') ?>"
+                        >
+                            <button
+                                type="button"
+                                class="btn btn-outline-secondary btn-sm d-flex align-items-center gap-2"
+                                id="navbarGitPullButton"
+                                title="Memeriksa status update repository..."
+                            >
+                                <i class="ti ti-git-pull-request fs-5"></i>
+                                <span class="d-none d-md-inline">Git Pull</span>
+                                <span class="badge rounded-pill bg-danger d-none" id="navbarGitPullBadge">0</span>
+                            </button>
+                        </div>
+                    </form>
+                </li>
+            <?php endif; ?>
             <li class="nav-item navbar-dropdown dropdown-user dropdown">
                 <a
                     class="nav-link dropdown-toggle hide-arrow d-flex align-items-center gap-2"
