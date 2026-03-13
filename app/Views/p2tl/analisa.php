@@ -168,8 +168,16 @@ $selectedUnitName = (string) ($selectedUnitName ?? '');
                 </div>
                 <div class="mt-3">
                     <canvas id="chartAnalisa" height="120"></canvas>
-                    <div class="small text-muted mt-2">
-                        Keterangan: titik merah temuan dapat diklik untuk menampilkan urutan 12 bulan.
+                    <div class="d-flex align-items-center justify-content-between gap-2 mt-2">
+                        <div class="small text-muted">
+                            Keterangan: titik merah temuan dapat diklik untuk menampilkan urutan 12 bulan.
+                        </div>
+                        <div class="d-flex align-items-center gap-2">
+                            <select class="form-select form-select-sm d-none" id="selectTemuanAnalisa" style="min-width: 220px;">
+                                <option value="">Pilih Temuan</option>
+                            </select>
+                            <button type="button" class="btn btn-sm btn-outline-secondary d-none" id="btnResetAnalisaView">Reset Tampilan</button>
+                        </div>
                     </div>
                 </div>
                 <div class="table-responsive">
@@ -258,6 +266,10 @@ $selectedUnitName = (string) ($selectedUnitName ?? '');
                 $('#detailTitle').text('Detail IDPEL: ' + idpel);
                 var years = response.years || [];
                 var html = '';
+                var resetButton = $('#btnResetAnalisaView');
+                var temuanSelect = $('#selectTemuanAnalisa');
+                resetButton.addClass('d-none');
+                temuanSelect.addClass('d-none').html('<option value="">Pilih Temuan</option>').val('');
 
                 function formatPercent(value) {
                     if (value === null || Number.isNaN(value) || !Number.isFinite(value)) {
@@ -318,30 +330,28 @@ $selectedUnitName = (string) ($selectedUnitName ?? '');
                     $('#detailTarif').text(response.tarif || '-');
                     $('#detailDaya').text(response.daya === null ? '-' : Number(response.daya).toLocaleString('id-ID', { maximumFractionDigits: 0 }));
 
-                    var currentYear = years.length > 0 ? String(years[0]) : null;
-                    var previousYear = years.length > 1 ? String(years[1]) : null;
+                    var detailRows = Array.isArray(response.rows) ? response.rows : [];
                     // Continuous 36-month series: [Jan(y-2)..Dec(y-2), Jan(y-1)..Dec(y-1), Jan(y)..Dec(y)]
                     var continuousSeries = Array.isArray(response.jn_continuous)
                         ? response.jn_continuous.map(function (v) { return v === null ? null : Number(v); })
                         : [];
                     while (continuousSeries.length < 36) { continuousSeries.push(null); }
 
-                    $.each(response.rows || [], function (rowIndex, row) {
-                        html += '<tr><td>' + row.bulan + '</td>';
+                    function buildDetailRowHtml(row, rowIndex, labelText) {
+                        var rowHtml = '<tr><td>' + labelText + '</td>';
 
                         $.each(years, function (_idx, year) {
                             var kwhData = row.pemakaian_kwh || {};
                             var value = Object.prototype.hasOwnProperty.call(kwhData, String(year)) ? kwhData[String(year)] : null;
-                            html += '<td class="text-end">' + (value === null ? '-' : Number(value).toLocaleString('id-ID', { maximumFractionDigits: 0 })) + '</td>';
+                            rowHtml += '<td class="text-end">' + (value === null ? '-' : Number(value).toLocaleString('id-ID', { maximumFractionDigits: 0 })) + '</td>';
                         });
 
                         $.each(years, function (_idx, year) {
                             var nyalaData = row.jam_nyala || {};
                             var value = Object.prototype.hasOwnProperty.call(nyalaData, String(year)) ? nyalaData[String(year)] : null;
-                            html += '<td class="text-end">' + (value === null ? '-' : Number(value).toLocaleString('id-ID', { maximumFractionDigits: 0 })) + '</td>';
+                            rowHtml += '<td class="text-end">' + (value === null ? '-' : Number(value).toLocaleString('id-ID', { maximumFractionDigits: 0 })) + '</td>';
                         });
 
-                        // baseIdx: position of this month in the 36-month continuous series (rowIndex 0=Jan at offset 24)
                         var baseIdx = 24 + rowIndex;
                         var bulanan = percentDiff(continuousSeries[baseIdx], continuousSeries[baseIdx - 1]);
                         var triwulan = percentDiff(
@@ -357,15 +367,40 @@ $selectedUnitName = (string) ($selectedUnitName ?? '');
                             continuousWindowAvg(continuousSeries, baseIdx - 23, baseIdx - 12)
                         );
 
-                        html += '<td class="text-end">' + formatPercent(bulanan) + '</td>';
-                        html += '<td class="text-end">' + formatPercent(triwulan) + '</td>';
-                        html += '<td class="text-end">' + formatPercent(semester) + '</td>';
-                        html += '<td class="text-end">' + formatPercent(tahunan) + '</td>';
-                        html += '</tr>';
+                        rowHtml += '<td class="text-end">' + formatPercent(bulanan) + '</td>';
+                        rowHtml += '<td class="text-end">' + formatPercent(triwulan) + '</td>';
+                        rowHtml += '<td class="text-end">' + formatPercent(semester) + '</td>';
+                        rowHtml += '<td class="text-end">' + formatPercent(tahunan) + '</td>';
+                        rowHtml += '</tr>';
+
+                        return rowHtml;
+                    }
+
+                    function renderDetailRows(orderItems) {
+                        var bodyHtml = '';
+                        orderItems.forEach(function (item) {
+                            var row = detailRows[item.rowIndex] || null;
+                            if (!row) {
+                                return;
+                            }
+                            bodyHtml += buildDetailRowHtml(row, item.rowIndex, item.label || row.bulan);
+                        });
+                        $('#detailBody').html(bodyHtml);
+                    }
+
+                    var defaultDetailOrder = detailRows.map(function (row, idx) {
+                        return {
+                            rowIndex: idx,
+                            label: row.bulan
+                        };
                     });
+
+                    renderDetailRows(defaultDetailOrder);
                 }
 
-                $('#detailBody').html(html);
+                if (!response.has_data) {
+                    $('#detailBody').html(html);
+                }
 
                 $.ajax({
                     url: '<?= site_url('C_P2TL/getAnalisaGrafikAjax') ?>',
@@ -469,6 +504,9 @@ $selectedUnitName = (string) ($selectedUnitName ?? '');
                             labels: Array.isArray(chartResponse.labels) ? chartResponse.labels.slice() : [],
                             datasets: (chartResponse.datasets || []).map(cloneDataset)
                         };
+                        var isCountdownMode = false;
+                        var isTemuanSelectSyncing = false;
+                        var temuanOptionMap = {};
 
                         function parseYearFromLabel(label, fallbackYear) {
                             var match = String(label || '').match(/\((\d{4})\)/);
@@ -498,7 +536,118 @@ $selectedUnitName = (string) ($selectedUnitName ?? '');
                             return output;
                         }
 
-                        function applyCountdownView(clickedDatasetIndex, clickedDataIndex) {
+                        function buildCountdownDetailOrder(startYear, startMonthIndex, sourceMonthLabels) {
+                            var order = [];
+                            for (var offset = 11; offset >= 0; offset--) {
+                                var d = new Date(startYear, startMonthIndex, 1);
+                                d.setMonth(d.getMonth() - offset);
+                                var monthIndex = d.getMonth();
+                                var monthName = sourceMonthLabels[monthIndex] || d.toLocaleString('id-ID', { month: 'long' });
+                                order.push({
+                                    rowIndex: monthIndex,
+                                    label: monthName + ' ' + d.getFullYear()
+                                });
+                            }
+                            return order;
+                        }
+
+                        function buildTemuanOptions(sourceDatasets, sourceMonthLabels) {
+                            var options = [];
+                            sourceDatasets.forEach(function (dataset, datasetIndex) {
+                                var datasetYear = parseYearFromLabel(dataset.label, Number($('#tahun').val() || new Date().getFullYear()));
+                                var temuanSeries = Array.isArray(dataset.temuan) ? dataset.temuan : [];
+
+                                temuanSeries.forEach(function (temuanInfo, monthIndex) {
+                                    if (!temuanInfo || temuanInfo.has_temuan !== true) {
+                                        return;
+                                    }
+
+                                    var golCounts = temuanInfo.gol_counts && typeof temuanInfo.gol_counts === 'object'
+                                        ? temuanInfo.gol_counts
+                                        : {};
+                                    Object.keys(golCounts).forEach(function (golKey) {
+                                        var count = Number(golCounts[golKey] || 0);
+                                        if (!Number.isFinite(count) || count <= 0) {
+                                            return;
+                                        }
+
+                                        var value = [datasetIndex, monthIndex, golKey].join('|');
+                                        options.push({
+                                            value: value,
+                                            label: golKey + ' - ' + sourceMonthLabels[monthIndex] + ' ' + datasetYear,
+                                            datasetIndex: datasetIndex,
+                                            monthIndex: monthIndex
+                                        });
+                                    });
+                                });
+                            });
+
+                            return options;
+                        }
+
+                        function setTemuanSelectionByPoint(datasetIndex, monthIndex) {
+                            var matchedValue = '';
+                            Object.keys(temuanOptionMap).some(function (key) {
+                                var opt = temuanOptionMap[key];
+                                if (opt.datasetIndex === datasetIndex && opt.monthIndex === monthIndex) {
+                                    matchedValue = key;
+                                    return true;
+                                }
+                                return false;
+                            });
+
+                            isTemuanSelectSyncing = true;
+                            temuanSelect.val(matchedValue);
+                            isTemuanSelectSyncing = false;
+                        }
+
+                        function populateTemuanSelect() {
+                            temuanOptionMap = {};
+                            var options = buildTemuanOptions(originalChartPayload.datasets, originalChartPayload.labels);
+
+                            if (options.length === 0) {
+                                temuanSelect.addClass('d-none').html('<option value="">Pilih Temuan</option>').val('');
+                                return;
+                            }
+
+                            var htmlOptions = '<option value="">Pilih Temuan</option>';
+                            options.forEach(function (opt) {
+                                temuanOptionMap[opt.value] = opt;
+                                htmlOptions += '<option value="' + opt.value + '">' + opt.label + '</option>';
+                            });
+
+                            temuanSelect.removeClass('d-none').html(htmlOptions).val('');
+                        }
+
+                        function resetCountdownView() {
+                            if (!chartAnalisa) {
+                                return;
+                            }
+
+                            chartAnalisa.data.labels = originalChartPayload.labels.slice();
+                            chartAnalisa.data.datasets = originalChartPayload.datasets.map(cloneDataset);
+                            chartAnalisa.update();
+
+                            if (response.has_data && typeof renderDetailRows === 'function' && typeof defaultDetailOrder !== 'undefined') {
+                                renderDetailRows(defaultDetailOrder);
+                            }
+
+                            isCountdownMode = false;
+                            resetButton.addClass('d-none');
+                            isTemuanSelectSyncing = true;
+                            temuanSelect.val('');
+                            isTemuanSelectSyncing = false;
+                        }
+
+                        resetButton.off('click').on('click', function () {
+                            resetCountdownView();
+                        });
+
+                        function applyCountdownView(clickedDatasetIndex, clickedDataIndex, forceApply) {
+                            if (isCountdownMode && forceApply !== true) {
+                                return;
+                            }
+
                             var sourceLabels = originalChartPayload.labels;
                             var sourceDatasets = originalChartPayload.datasets;
                             var clickedSourceDataset = sourceDatasets[clickedDatasetIndex];
@@ -537,7 +686,36 @@ $selectedUnitName = (string) ($selectedUnitName ?? '');
                             });
 
                             chartAnalisa.update();
+
+                            if (response.has_data && typeof renderDetailRows === 'function') {
+                                renderDetailRows(buildCountdownDetailOrder(clickedYear, clickedDataIndex, sourceLabels));
+                            }
+
+                            isCountdownMode = true;
+                            resetButton.removeClass('d-none');
+                            setTemuanSelectionByPoint(clickedDatasetIndex, clickedDataIndex);
                         }
+
+                        temuanSelect.off('change').on('change', function () {
+                            if (isTemuanSelectSyncing) {
+                                return;
+                            }
+
+                            var selectedValue = String($(this).val() || '');
+                            if (selectedValue === '') {
+                                resetCountdownView();
+                                return;
+                            }
+
+                            var selected = temuanOptionMap[selectedValue] || null;
+                            if (!selected) {
+                                return;
+                            }
+
+                            applyCountdownView(selected.datasetIndex, selected.monthIndex, true);
+                        });
+
+                        populateTemuanSelect();
 
                         chartAnalisa = new Chart(ctx, {
                             type: 'line',
@@ -560,7 +738,9 @@ $selectedUnitName = (string) ($selectedUnitName ?? '');
 
                                                 var lines = [];
                                                 items.forEach(function (item) {
-                                                    var dataset = (chartResponse.datasets || [])[item.datasetIndex] || null;
+                                                    var dataset = (chartAnalisa && chartAnalisa.data && chartAnalisa.data.datasets
+                                                        ? chartAnalisa.data.datasets
+                                                        : [])[item.datasetIndex] || null;
                                                     var temuan = dataset && Array.isArray(dataset.temuan)
                                                         ? (dataset.temuan[item.dataIndex] || null)
                                                         : null;
@@ -602,11 +782,16 @@ $selectedUnitName = (string) ($selectedUnitName ?? '');
                                         return;
                                     }
 
-                                    applyCountdownView(first.datasetIndex, first.index);
+                                    applyCountdownView(first.datasetIndex, first.index, false);
                                 },
                                 onHover: function (event, elements) {
                                     var target = event && event.native ? event.native.target : null;
                                     if (!target) {
+                                        return;
+                                    }
+
+                                    if (isCountdownMode) {
+                                        target.style.cursor = 'default';
                                         return;
                                     }
 
