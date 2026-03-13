@@ -168,6 +168,9 @@ $selectedUnitName = (string) ($selectedUnitName ?? '');
                 </div>
                 <div class="mt-3">
                     <canvas id="chartAnalisa" height="120"></canvas>
+                    <div class="small text-muted mt-2">
+                        Keterangan: titik merah temuan dapat diklik untuk menampilkan urutan 12 bulan.
+                    </div>
                 </div>
                 <div class="table-responsive">
                     <table class="table table-bordered">
@@ -446,6 +449,96 @@ $selectedUnitName = (string) ($selectedUnitName ?? '');
                             }
                         };
 
+                        function cloneDataset(dataset) {
+                            return {
+                                label: dataset.label,
+                                borderColor: dataset.borderColor,
+                                backgroundColor: dataset.backgroundColor,
+                                tension: dataset.tension,
+                                fill: dataset.fill,
+                                data: Array.isArray(dataset.data) ? dataset.data.slice() : [],
+                                temuan: Array.isArray(dataset.temuan) ? dataset.temuan.slice() : [],
+                                pointBackgroundColor: Array.isArray(dataset.pointBackgroundColor) ? dataset.pointBackgroundColor.slice() : dataset.pointBackgroundColor,
+                                pointBorderColor: Array.isArray(dataset.pointBorderColor) ? dataset.pointBorderColor.slice() : dataset.pointBorderColor,
+                                pointRadius: Array.isArray(dataset.pointRadius) ? dataset.pointRadius.slice() : dataset.pointRadius,
+                                pointHoverRadius: Array.isArray(dataset.pointHoverRadius) ? dataset.pointHoverRadius.slice() : dataset.pointHoverRadius
+                            };
+                        }
+
+                        var originalChartPayload = {
+                            labels: Array.isArray(chartResponse.labels) ? chartResponse.labels.slice() : [],
+                            datasets: (chartResponse.datasets || []).map(cloneDataset)
+                        };
+
+                        function parseYearFromLabel(label, fallbackYear) {
+                            var match = String(label || '').match(/\((\d{4})\)/);
+                            if (match && match[1]) {
+                                return Number(match[1]);
+                            }
+                            return fallbackYear;
+                        }
+
+                        function buildCountdownLabels(startYear, startMonthIndex, sourceMonthLabels) {
+                            var labels = [];
+                            for (var step = 0; step < 12; step++) {
+                                var d = new Date(startYear, startMonthIndex, 1);
+                                d.setMonth(d.getMonth() - step);
+                                var monthName = sourceMonthLabels[d.getMonth()] || d.toLocaleString('id-ID', { month: 'long' });
+                                labels.push(monthName + ' ' + d.getFullYear());
+                            }
+                            return labels;
+                        }
+
+                        function reorderBackward(values, startMonthIndex) {
+                            var output = [];
+                            for (var step = 0; step < 12; step++) {
+                                var idx = (startMonthIndex - step + 12) % 12;
+                                output.push(values[idx]);
+                            }
+                            return output;
+                        }
+
+                        function applyCountdownView(clickedDatasetIndex, clickedDataIndex) {
+                            var sourceLabels = originalChartPayload.labels;
+                            var sourceDatasets = originalChartPayload.datasets;
+                            var clickedSourceDataset = sourceDatasets[clickedDatasetIndex];
+                            if (!clickedSourceDataset) {
+                                return;
+                            }
+
+                            var fallbackYear = Number($('#tahun').val() || new Date().getFullYear());
+                            var clickedYear = parseYearFromLabel(clickedSourceDataset.label, fallbackYear);
+                            var newLabels = buildCountdownLabels(clickedYear, clickedDataIndex, sourceLabels).reverse();
+
+                            chartAnalisa.data.labels = newLabels;
+                            chartAnalisa.data.datasets = sourceDatasets.map(function (dataset) {
+                                var cloned = cloneDataset(dataset);
+
+                                if (Array.isArray(cloned.data) && cloned.data.length >= 12) {
+                                    cloned.data = reorderBackward(cloned.data, clickedDataIndex).reverse();
+                                }
+                                if (Array.isArray(cloned.temuan) && cloned.temuan.length >= 12) {
+                                    cloned.temuan = reorderBackward(cloned.temuan, clickedDataIndex).reverse();
+                                }
+                                if (Array.isArray(cloned.pointBackgroundColor) && cloned.pointBackgroundColor.length >= 12) {
+                                    cloned.pointBackgroundColor = reorderBackward(cloned.pointBackgroundColor, clickedDataIndex).reverse();
+                                }
+                                if (Array.isArray(cloned.pointBorderColor) && cloned.pointBorderColor.length >= 12) {
+                                    cloned.pointBorderColor = reorderBackward(cloned.pointBorderColor, clickedDataIndex).reverse();
+                                }
+                                if (Array.isArray(cloned.pointRadius) && cloned.pointRadius.length >= 12) {
+                                    cloned.pointRadius = reorderBackward(cloned.pointRadius, clickedDataIndex).reverse();
+                                }
+                                if (Array.isArray(cloned.pointHoverRadius) && cloned.pointHoverRadius.length >= 12) {
+                                    cloned.pointHoverRadius = reorderBackward(cloned.pointHoverRadius, clickedDataIndex).reverse();
+                                }
+
+                                return cloned;
+                            });
+
+                            chartAnalisa.update();
+                        }
+
                         chartAnalisa = new Chart(ctx, {
                             type: 'line',
                             data: {
@@ -493,6 +586,42 @@ $selectedUnitName = (string) ($selectedUnitName ?? '');
                                     y: {
                                         beginAtZero: true
                                     }
+                                },
+                                onClick: function (_event, elements) {
+                                    if (!elements || elements.length === 0) {
+                                        return;
+                                    }
+
+                                    var first = elements[0];
+                                    var dataset = chartAnalisa.data.datasets[first.datasetIndex] || null;
+                                    var temuan = dataset && Array.isArray(dataset.temuan)
+                                        ? (dataset.temuan[first.index] || null)
+                                        : null;
+
+                                    if (!temuan || temuan.has_temuan !== true) {
+                                        return;
+                                    }
+
+                                    applyCountdownView(first.datasetIndex, first.index);
+                                },
+                                onHover: function (event, elements) {
+                                    var target = event && event.native ? event.native.target : null;
+                                    if (!target) {
+                                        return;
+                                    }
+
+                                    if (!elements || elements.length === 0) {
+                                        target.style.cursor = 'default';
+                                        return;
+                                    }
+
+                                    var first = elements[0];
+                                    var dataset = chartAnalisa.data.datasets[first.datasetIndex] || null;
+                                    var temuan = dataset && Array.isArray(dataset.temuan)
+                                        ? (dataset.temuan[first.index] || null)
+                                        : null;
+
+                                    target.style.cursor = (temuan && temuan.has_temuan === true) ? 'pointer' : 'default';
                                 }
                             }
                         });
