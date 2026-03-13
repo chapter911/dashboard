@@ -564,10 +564,19 @@ body.modal-open {
                                 var baseIdx = ((ym.year - (<?= (int) $selectedYear ?> - 2)) * 12) + monthIndex;
                                 order.push({
                                     rowIndex: monthIndex,
-                                    label: monthName + ' ' + ym.year,
+                                    label: monthName,
                                     baseIdx: baseIdx,
+                                    year: ym.year,
                                 });
                             }
+
+                            // For yearly view, keep month labels in calendar order Jan..Dec.
+                            if (windowSize === 12) {
+                                order.sort(function (a, b) {
+                                    return a.rowIndex - b.rowIndex;
+                                });
+                            }
+
                             return order;
                         }
 
