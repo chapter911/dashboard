@@ -29,6 +29,9 @@ $selectedUnitName = (string) ($selectedUnitName ?? '');
 #tableAnalisa tbody td:nth-child(12) {
     text-align: right;
 }
+.table-detail-temuan tr.temuan-highlight td:first-child {
+    background-color: rgba(220, 53, 69, 0.18) !important;
+}
 .form-select:focus,
 .form-control:focus {
     border-color: #0d6efd;
@@ -191,7 +194,7 @@ body.modal-open {
                     <div class="small text-muted mt-2">Keterangan: titik merah temuan dapat diklik untuk menampilkan urutan 12 bulan.</div>
                 </div>
                 <div class="table-responsive">
-                    <table class="table table-bordered">
+                    <table class="table table-bordered table-detail-temuan">
                         <thead id="detailHead"></thead>
                         <tbody id="detailBody"></tbody>
                     </table>
@@ -357,35 +360,47 @@ body.modal-open {
                         : [];
                     while (continuousSeries.length < 36) { continuousSeries.push(null); }
 
-                    function buildDetailRowHtml(row, rowIndex, labelText, baseIdxOverride) {
-                        var rowHtml = '<tr><td>' + labelText + '</td>';
+                    function buildDetailRowHtml(row, rowIndex, labelText, baseIdxOverride, isActive, hasTemuan) {
+                        var rowClass = hasTemuan === true ? ' class="temuan-highlight"' : '';
+                        var rowHtml = '<tr' + rowClass + '><td>' + labelText + '</td>';
 
                         $.each(years, function (_idx, year) {
                             var kwhData = row.pemakaian_kwh || {};
-                            var value = Object.prototype.hasOwnProperty.call(kwhData, String(year)) ? kwhData[String(year)] : null;
+                            var value = isActive
+                                ? (Object.prototype.hasOwnProperty.call(kwhData, String(year)) ? kwhData[String(year)] : null)
+                                : null;
                             rowHtml += '<td class="text-end">' + (value === null ? '-' : Number(value).toLocaleString('id-ID', { maximumFractionDigits: 0 })) + '</td>';
                         });
 
                         $.each(years, function (_idx, year) {
                             var nyalaData = row.jam_nyala || {};
-                            var value = Object.prototype.hasOwnProperty.call(nyalaData, String(year)) ? nyalaData[String(year)] : null;
+                            var value = isActive
+                                ? (Object.prototype.hasOwnProperty.call(nyalaData, String(year)) ? nyalaData[String(year)] : null)
+                                : null;
                             rowHtml += '<td class="text-end">' + (value === null ? '-' : Number(value).toLocaleString('id-ID', { maximumFractionDigits: 0 })) + '</td>';
                         });
 
-                        var baseIdx = typeof baseIdxOverride === 'number' ? baseIdxOverride : (24 + rowIndex);
-                        var bulanan = percentDiff(continuousSeries[baseIdx], continuousSeries[baseIdx - 1]);
-                        var triwulan = percentDiff(
-                            continuousWindowAvg(continuousSeries, baseIdx - 2, baseIdx),
-                            continuousWindowAvg(continuousSeries, baseIdx - 5, baseIdx - 3)
-                        );
-                        var semester = percentDiff(
-                            continuousWindowAvg(continuousSeries, baseIdx - 5, baseIdx),
-                            continuousWindowAvg(continuousSeries, baseIdx - 11, baseIdx - 6)
-                        );
-                        var tahunan = percentDiff(
-                            continuousWindowAvg(continuousSeries, baseIdx - 11, baseIdx),
-                            continuousWindowAvg(continuousSeries, baseIdx - 23, baseIdx - 12)
-                        );
+                        var bulanan = null;
+                        var triwulan = null;
+                        var semester = null;
+                        var tahunan = null;
+
+                        if (isActive) {
+                            var baseIdx = typeof baseIdxOverride === 'number' ? baseIdxOverride : (24 + rowIndex);
+                            bulanan = percentDiff(continuousSeries[baseIdx], continuousSeries[baseIdx - 1]);
+                            triwulan = percentDiff(
+                                continuousWindowAvg(continuousSeries, baseIdx - 2, baseIdx),
+                                continuousWindowAvg(continuousSeries, baseIdx - 5, baseIdx - 3)
+                            );
+                            semester = percentDiff(
+                                continuousWindowAvg(continuousSeries, baseIdx - 5, baseIdx),
+                                continuousWindowAvg(continuousSeries, baseIdx - 11, baseIdx - 6)
+                            );
+                            tahunan = percentDiff(
+                                continuousWindowAvg(continuousSeries, baseIdx - 11, baseIdx),
+                                continuousWindowAvg(continuousSeries, baseIdx - 23, baseIdx - 12)
+                            );
+                        }
 
                         rowHtml += '<td class="text-end">' + formatPercent(bulanan) + '</td>';
                         rowHtml += '<td class="text-end">' + formatPercent(triwulan) + '</td>';
@@ -403,7 +418,14 @@ body.modal-open {
                             if (!row) {
                                 return;
                             }
-                            bodyHtml += buildDetailRowHtml(row, item.rowIndex, item.label || row.bulan, item.baseIdx);
+                            bodyHtml += buildDetailRowHtml(
+                                row,
+                                item.rowIndex,
+                                item.label || row.bulan,
+                                item.baseIdx,
+                                item.active !== false,
+                                item.hasTemuan === true
+                            );
                         });
                         $('#detailBody').html(bodyHtml);
                     }
@@ -412,7 +434,9 @@ body.modal-open {
                         return {
                             rowIndex: idx,
                             label: row.bulan,
-                            baseIdx: 24 + idx
+                            baseIdx: 24 + idx,
+                            active: true,
+                            hasTemuan: false,
                         };
                     });
 
@@ -556,18 +580,36 @@ body.modal-open {
                         }
 
                         function buildCountdownDetailOrder(startYear, startMonthIndex, sourceMonthLabels, windowSize) {
-                            var order = [];
+                            var monthMap = {};
                             for (var offset = windowSize - 1; offset >= 0; offset--) {
                                 var ym = shiftMonth(startYear, startMonthIndex, -offset);
                                 var monthIndex = ym.monthIndex;
                                 var monthName = sourceMonthLabels[monthIndex] || new Date(ym.year, ym.monthIndex, 1).toLocaleString('id-ID', { month: 'long' });
                                 var baseIdx = ((ym.year - (<?= (int) $selectedYear ?> - 2)) * 12) + monthIndex;
-                                order.push({
+                                var periodPoint = getSeriesPointByYearMonth(ym.year, ym.monthIndex);
+                                monthMap[monthIndex] = {
                                     rowIndex: monthIndex,
                                     label: monthName,
                                     baseIdx: baseIdx,
                                     year: ym.year,
-                                });
+                                    active: true,
+                                    hasTemuan: !!(periodPoint.temuan && periodPoint.temuan.has_temuan === true),
+                                };
+                            }
+
+                            var order = [];
+                            for (var m = 0; m < 12; m++) {
+                                if (monthMap[m]) {
+                                    order.push(monthMap[m]);
+                                } else {
+                                    order.push({
+                                        rowIndex: m,
+                                        label: sourceMonthLabels[m],
+                                        baseIdx: null,
+                                        active: false,
+                                        hasTemuan: false,
+                                    });
+                                }
                             }
 
                             // For yearly view, keep month labels in calendar order Jan..Dec.
@@ -590,6 +632,16 @@ body.modal-open {
                                 };
                             });
                             return map;
+                        }
+
+                        function refreshDefaultTemuanMarkers() {
+                            var periodeSatu = originalChartPayload.datasets[0] || null;
+                            var temuanSeries = periodeSatu && Array.isArray(periodeSatu.temuan) ? periodeSatu.temuan : [];
+
+                            defaultDetailOrder.forEach(function (item) {
+                                var info = temuanSeries[item.rowIndex] || null;
+                                item.hasTemuan = !!(info && info.has_temuan === true);
+                            });
                         }
 
                         function getSeriesPointByYearMonth(year, monthIndex) {
@@ -804,6 +856,10 @@ body.modal-open {
                         });
 
                         seriesByYear = buildSeriesByYear(originalChartPayload.datasets);
+                        refreshDefaultTemuanMarkers();
+                        if (!isCountdownMode && response.has_data && typeof renderDetailRows === 'function') {
+                            renderDetailRows(defaultDetailOrder);
+                        }
                         populateTemuanSelect();
 
                         chartAnalisa = new Chart(ctx, {
