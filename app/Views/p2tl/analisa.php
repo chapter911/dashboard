@@ -583,7 +583,9 @@ body.modal-open {
 
                         function buildCountdownDetailOrder(startYear, startMonthIndex, sourceMonthLabels, windowSize) {
                             var monthMap = {};
-                            for (var offset = windowSize - 1; offset >= 0; offset--) {
+                            var tableSpan = windowSize === 12 ? 12 : (windowSize * 2);
+
+                            for (var offset = tableSpan - 1; offset >= 0; offset--) {
                                 var ym = shiftMonth(startYear, startMonthIndex, -offset);
                                 var monthIndex = ym.monthIndex;
                                 var monthName = sourceMonthLabels[monthIndex] || new Date(ym.year, ym.monthIndex, 1).toLocaleString('id-ID', { month: 'long' });
