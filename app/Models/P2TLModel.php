@@ -472,12 +472,14 @@ SQL;
     public function getAnalisaSummaryDatatable(array $filters, int $start, int $length, ?string $search, bool $isAdmin, ?int $userUnitId): array
     {
         $year = (int) ($filters['tahun'] ?? date('Y'));
+        $periodStart = sprintf('%04d-01-01', $year);
+        $periodEnd = sprintf('%04d-01-01', $year + 1);
         $unit = (string) ($filters['unit'] ?? '*');
         $idpel = trim((string) ($filters['idpel'] ?? ''));
         $temuanStatus = (string) ($filters['temuan_status'] ?? '*');
 
         $unitWhere = '';
-        $binds = [$year, $year];
+        $binds = [$periodStart, $periodEnd, $periodStart, $periodEnd];
 
         if (! $isAdmin && $userUnitId !== null) {
             $unitWhere = ' AND a.unit_id = ?';
@@ -508,7 +510,8 @@ SQL;
                     MIN((a.pemakaian_kwh / NULLIF(a.daya, 0)) * 1000) AS jam_nyala_min,
                     MAX((a.pemakaian_kwh / NULLIF(a.daya, 0)) * 1000) AS jam_nyala_max
                 FROM trn_p2tl_analisa a
-                WHERE YEAR(a.periode) = ?
+                WHERE a.periode >= ?
+                    AND a.periode < ?
                     AND a.pemakaian_kwh IS NOT NULL
                     AND a.daya IS NOT NULL{$unitWhere}
                 GROUP BY a.idpel, a.tarif, a.daya
@@ -519,12 +522,15 @@ SQL;
                     a.daya,
                     AVG((a.pemakaian_kwh / NULLIF(a.daya, 0)) * 1000) AS rata_rata_daya
                 FROM trn_p2tl_analisa a
-                WHERE YEAR(a.periode) = ?
+                WHERE a.periode >= ?
+                    AND a.periode < ?
                     AND a.pemakaian_kwh IS NOT NULL
                     AND a.daya IS NOT NULL{$unitWhere}
                 GROUP BY a.tarif, a.daya
             ) g ON s.tarif = g.tarif AND s.daya = g.daya";
 
+        $fromSql = '(' . $baseSql . ') x';
+        $fromBinds = $binds;
         $where = '';
         $whereBinds = [];
         if ($idpel !== '') {
@@ -543,45 +549,46 @@ SQL;
         $allowedTemuanStatuses = ['P1', 'P2', 'P3', 'P4', 'K2'];
         $normalizedGolSql = "REPLACE(REPLACE(UPPER(TRIM(p.gol)), 'TEMUAN - ', ''), 'TEMUAN-', '')";
         if ($temuanStatus === 'has' || $temuanStatus === 'none' || in_array($temuanStatus, $allowedTemuanStatuses, true)) {
-            $temuanExistsSql = "EXISTS (
-                SELECT 1
+            $temuanJoinSql = " LEFT JOIN (
+                SELECT DISTINCT
+                    p.idpel COLLATE utf8mb4_general_ci AS idpel
                 FROM trn_p2tl p
-                WHERE p.idpel COLLATE utf8mb4_general_ci = x.idpel
-                    AND p.tanggal_register IS NOT NULL
-                    AND YEAR(p.tanggal_register) = ?";
-            $temuanBinds = [$year];
+                WHERE p.tanggal_register >= ?
+                    AND p.tanggal_register < ?";
+            $temuanBinds = [$periodStart, $periodEnd];
 
             if (in_array($temuanStatus, $allowedTemuanStatuses, true)) {
-                $temuanExistsSql .= ' AND ' . $normalizedGolSql . ' = ?';
+                $temuanJoinSql .= ' AND ' . $normalizedGolSql . ' = ?';
                 $temuanBinds[] = $temuanStatus;
             } else {
-                $temuanExistsSql .= " AND " . $normalizedGolSql . " IN ('P1', 'P2', 'P3', 'P4', 'K2')";
+                $temuanJoinSql .= " AND " . $normalizedGolSql . " IN ('P1', 'P2', 'P3', 'P4', 'K2')";
             }
 
             if (! $isAdmin && $userUnitId !== null) {
-                $temuanExistsSql .= ' AND p.unit_id = ?';
+                $temuanJoinSql .= ' AND p.unit_id = ?';
                 $temuanBinds[] = $userUnitId;
             } elseif ($unit !== '' && $unit !== '*') {
-                $temuanExistsSql .= ' AND p.unit_id = ?';
+                $temuanJoinSql .= ' AND p.unit_id = ?';
                 $temuanBinds[] = (int) $unit;
             }
 
-            $temuanExistsSql .= ')';
+            $temuanJoinSql .= ') t ON t.idpel = x.idpel';
+            $fromSql .= $temuanJoinSql;
+            $fromBinds = array_merge($fromBinds, $temuanBinds);
 
             $where .= ($where === '' ? ' WHERE ' : ' AND ')
-                . ($temuanStatus === 'none' ? 'NOT ' . $temuanExistsSql : $temuanExistsSql);
-            $whereBinds = array_merge($whereBinds, $temuanBinds);
+                . ($temuanStatus === 'none' ? 't.idpel IS NULL' : 't.idpel IS NOT NULL');
         }
 
-        $countSql = 'SELECT COUNT(*) AS total FROM (' . $baseSql . ') x' . $where;
-        $total = (int) ($this->db->query($countSql, array_merge($binds, $whereBinds))->getRowArray()['total'] ?? 0);
+        $countSql = 'SELECT COUNT(*) AS total FROM ' . $fromSql . $where;
+        $total = (int) ($this->db->query($countSql, array_merge($fromBinds, $whereBinds))->getRowArray()['total'] ?? 0);
 
-        $dataSql = 'SELECT * FROM (' . $baseSql . ') x' . $where . ' ORDER BY x.idpel ASC';
+        $dataSql = 'SELECT x.* FROM ' . $fromSql . $where . ' ORDER BY x.idpel ASC';
         if ($length > 0) {
             $dataSql .= ' LIMIT ' . (int) $start . ', ' . (int) $length;
         }
 
-        $rows = $this->db->query($dataSql, array_merge($binds, $whereBinds))->getResultArray();
+        $rows = $this->db->query($dataSql, array_merge($fromBinds, $whereBinds))->getResultArray();
 
         return [
             'rows' => $rows,
