@@ -476,7 +476,28 @@ SQL;
         $periodEnd = sprintf('%04d-01-01', $year + 1);
         $unit = (string) ($filters['unit'] ?? '*');
         $idpel = trim((string) ($filters['idpel'] ?? ''));
-        $temuanStatus = (string) ($filters['temuan_status'] ?? '*');
+        $temuanStatusRaw = trim((string) ($filters['temuan_status'] ?? '*'));
+        $temuanStatus = '*';
+        if ($temuanStatusRaw !== '' && $temuanStatusRaw !== '*') {
+            $lower = strtolower($temuanStatusRaw);
+            if ($lower === 'has' || $lower === 'none') {
+                $temuanStatus = $lower;
+            } else {
+                $normalized = strtoupper($temuanStatusRaw);
+                $normalized = preg_replace('/[^A-Z0-9]/', '', $normalized) ?? '';
+                if (str_starts_with($normalized, 'TEMUAN')) {
+                    $normalized = substr($normalized, 6);
+                }
+
+                $allowedTemuanStatuses = ['P1', 'P2', 'P3', 'P4', 'K2'];
+                if (in_array($normalized, $allowedTemuanStatuses, true)) {
+                    $temuanStatus = $normalized;
+                } else {
+                    // Unknown status should not silently return all rows.
+                    $temuanStatus = '__INVALID__';
+                }
+            }
+        }
 
         $unitWhere = '';
         $binds = [$periodStart, $periodEnd, $periodStart, $periodEnd];
@@ -548,7 +569,9 @@ SQL;
 
         $allowedTemuanStatuses = ['P1', 'P2', 'P3', 'P4', 'K2'];
         $normalizedGolSql = "REPLACE(REPLACE(UPPER(TRIM(p.gol)), 'TEMUAN - ', ''), 'TEMUAN-', '')";
-        if ($temuanStatus === 'has' || $temuanStatus === 'none' || in_array($temuanStatus, $allowedTemuanStatuses, true)) {
+        if ($temuanStatus === '__INVALID__') {
+            $where .= ($where === '' ? ' WHERE ' : ' AND ') . '1 = 0';
+        } elseif ($temuanStatus === 'has' || $temuanStatus === 'none' || in_array($temuanStatus, $allowedTemuanStatuses, true)) {
             $temuanJoinSql = " LEFT JOIN (
                 SELECT DISTINCT
                     p.idpel COLLATE utf8mb4_general_ci AS idpel
