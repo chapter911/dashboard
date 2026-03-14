@@ -330,11 +330,11 @@ body.modal-open {
                 headHtml += '<th colspan="' + years.length + '" class="text-center">Jam Nyala</th>';
                 headHtml += '<th colspan="4" class="text-center">Selisih (%)</th></tr><tr>';
 
-                $.each(years, function (_idx, year) {
-                    headHtml += '<th class="text-center">' + year + '</th>';
+                $.each(years, function (idx, _year) {
+                    headHtml += '<th class="text-center">Periode ' + (idx + 1) + '</th>';
                 });
-                $.each(years, function (_idx, year) {
-                    headHtml += '<th class="text-center">' + year + '</th>';
+                $.each(years, function (idx, _year) {
+                    headHtml += '<th class="text-center">Periode ' + (idx + 1) + '</th>';
                 });
 
                 headHtml += '<th class="text-center">Bulanan</th>';
@@ -343,6 +343,7 @@ body.modal-open {
                 headHtml += '<th class="text-center">Tahunan</th>';
                 headHtml += '</tr>';
 
+                var defaultHeadHtml = headHtml;
                 $('#detailHead').html(headHtml);
 
                 if (!response.has_data) {
@@ -413,21 +414,70 @@ body.modal-open {
                         return rowHtml;
                     }
 
+                    function buildCountdownSingleRowHtml(row, item) {
+                        var year = String(item.year);
+                        var labelText = item.label || row.bulan;
+                        var kwhData = row.pemakaian_kwh || {};
+                        var nyalaData = row.jam_nyala || {};
+                        var kwhValue = Object.prototype.hasOwnProperty.call(kwhData, year) ? kwhData[year] : null;
+                        var nyalaValue = Object.prototype.hasOwnProperty.call(nyalaData, year) ? nyalaData[year] : null;
+                        var hasTemuan = item.hasTemuan === true;
+                        var baseIdx = item.baseIdx;
+
+                        var bulanan = percentDiff(continuousSeries[baseIdx], continuousSeries[baseIdx - 1]);
+                        var triwulan = percentDiff(
+                            continuousWindowAvg(continuousSeries, baseIdx - 2, baseIdx),
+                            continuousWindowAvg(continuousSeries, baseIdx - 5, baseIdx - 3)
+                        );
+                        var semester = percentDiff(
+                            continuousWindowAvg(continuousSeries, baseIdx - 5, baseIdx),
+                            continuousWindowAvg(continuousSeries, baseIdx - 11, baseIdx - 6)
+                        );
+                        var tahunan = percentDiff(
+                            continuousWindowAvg(continuousSeries, baseIdx - 11, baseIdx),
+                            continuousWindowAvg(continuousSeries, baseIdx - 23, baseIdx - 12)
+                        );
+
+                        var tdClass = hasTemuan ? 'text-end temuan-value-highlight' : 'text-end';
+                        var html = '<tr>';
+                        html += '<td>' + labelText + ' <small class="text-muted">' + year + '</small></td>';
+                        html += '<td class="' + tdClass + '">' + (kwhValue === null ? '-' : Number(kwhValue).toLocaleString('id-ID', { maximumFractionDigits: 0 })) + '</td>';
+                        html += '<td class="' + tdClass + '">' + (nyalaValue === null ? '-' : Number(nyalaValue).toLocaleString('id-ID', { maximumFractionDigits: 0 })) + '</td>';
+                        html += '<td class="text-end">' + formatPercent(bulanan) + '</td>';
+                        html += '<td class="text-end">' + formatPercent(triwulan) + '</td>';
+                        html += '<td class="text-end">' + formatPercent(semester) + '</td>';
+                        html += '<td class="text-end">' + formatPercent(tahunan) + '</td>';
+                        html += '</tr>';
+                        return html;
+                    }
+
                     function renderDetailRows(orderItems) {
                         var bodyHtml = '';
                         orderItems.forEach(function (item) {
+                            if (item.isGroupHeader === true) {
+                                bodyHtml += '<tr class="table-secondary">' +
+                                    '<td colspan="' + item.colSpan + '" class="fw-semibold">' +
+                                    item.periodLabel +
+                                    (item.rangeText ? '<span class="fw-normal text-muted ms-2 small">' + item.rangeText + '</span>' : '') +
+                                    '</td></tr>';
+                                return;
+                            }
                             var row = detailRows[item.rowIndex] || null;
                             if (!row) {
                                 return;
                             }
-                            bodyHtml += buildDetailRowHtml(
-                                row,
-                                item.rowIndex,
-                                item.label || row.bulan,
-                                item.baseIdx,
-                                item.active !== false,
-                                item.temuanYears || {}
-                            );
+                            if (typeof item.year !== 'undefined') {
+                                bodyHtml += buildCountdownSingleRowHtml(row, item);
+                            } else {
+                                bodyHtml += buildDetailRowHtml(
+                                    row,
+                                    item.rowIndex,
+                                    item.label || row.bulan,
+                                    item.baseIdx,
+                                    item.active !== false,
+                                    item.temuanYears || {}
+                                );
+                            }
                         });
                         $('#detailBody').html(bodyHtml);
                     }
@@ -440,7 +490,7 @@ body.modal-open {
                             active: true,
                             temuanYears: {},
                         };
-                    });
+                    }).reverse();
 
                     renderDetailRows(defaultDetailOrder);
                 }
@@ -582,50 +632,55 @@ body.modal-open {
                         }
 
                         function buildCountdownDetailOrder(startYear, startMonthIndex, sourceMonthLabels, windowSize) {
-                            var monthMap = {};
-                            var tableSpan = windowSize === 12 ? 12 : (windowSize * 2);
-
-                            for (var offset = tableSpan - 1; offset >= 0; offset--) {
-                                var ym = shiftMonth(startYear, startMonthIndex, -offset);
-                                var monthIndex = ym.monthIndex;
-                                var monthName = sourceMonthLabels[monthIndex] || new Date(ym.year, ym.monthIndex, 1).toLocaleString('id-ID', { month: 'long' });
-                                var baseIdx = ((ym.year - (<?= (int) $selectedYear ?> - 2)) * 12) + monthIndex;
-                                var periodPoint = getSeriesPointByYearMonth(ym.year, ym.monthIndex);
-                                var temuanYears = {};
-                                if (periodPoint.temuan && periodPoint.temuan.has_temuan === true) {
-                                    temuanYears[String(ym.year)] = true;
-                                }
-                                monthMap[monthIndex] = {
-                                    rowIndex: monthIndex,
-                                    label: monthName,
-                                    baseIdx: baseIdx,
-                                    year: ym.year,
-                                    active: true,
-                                    temuanYears: temuanYears,
-                                };
-                            }
-
+                            var periodOffsets = [0, 1, 2];
+                            var colSpan = 7; // Bulan + KWH + JN + 4x Selisih
                             var order = [];
-                            for (var m = 0; m < 12; m++) {
-                                if (monthMap[m]) {
-                                    order.push(monthMap[m]);
-                                } else {
-                                    order.push({
-                                        rowIndex: m,
-                                        label: sourceMonthLabels[m],
-                                        baseIdx: 24 + m,
+
+                            periodOffsets.forEach(function (periodOffset, periodIdx) {
+                                var offsetShift = periodOffset * windowSize;
+                                var periodItems = [];
+                                var newestYm = null;
+                                var oldestYm = null;
+
+                                for (var i = 0; i < windowSize; i++) {
+                                    var stepFromClicked = i + offsetShift;
+                                    var ym = shiftMonth(startYear, startMonthIndex, -stepFromClicked);
+                                    if (i === 0) { newestYm = ym; }
+                                    oldestYm = ym;
+
+                                    var monthIndex = ym.monthIndex;
+                                    var monthName = sourceMonthLabels[monthIndex] || new Date(ym.year, ym.monthIndex, 1).toLocaleString('id-ID', { month: 'long' });
+                                    var baseIdx = ((ym.year - (<?= (int) $selectedYear ?> - 2)) * 12) + monthIndex;
+                                    var periodPoint = getSeriesPointByYearMonth(ym.year, ym.monthIndex);
+                                    var hasTemuan = !!(periodPoint.temuan && periodPoint.temuan.has_temuan === true);
+                                    var temuanYears = {};
+                                    if (hasTemuan) { temuanYears[String(ym.year)] = true; }
+
+                                    periodItems.push({
+                                        rowIndex: monthIndex,
+                                        label: monthName,
+                                        year: ym.year,
+                                        baseIdx: baseIdx,
                                         active: true,
-                                        temuanYears: {},
+                                        temuanYears: temuanYears,
+                                        hasTemuan: hasTemuan,
+                                        isGroupHeader: false,
                                     });
                                 }
-                            }
 
-                            // For yearly view, keep month labels in calendar order Jan..Dec.
-                            if (windowSize === 12) {
-                                order.sort(function (a, b) {
-                                    return a.rowIndex - b.rowIndex;
+                                var newestLabel = newestYm ? (sourceMonthLabels[newestYm.monthIndex] || '') + ' ' + newestYm.year : '';
+                                var oldestLabel = oldestYm ? (sourceMonthLabels[oldestYm.monthIndex] || '') + ' ' + oldestYm.year : '';
+                                var rangeText = windowSize > 1 ? oldestLabel + ' \u2013 ' + newestLabel : newestLabel;
+
+                                order.push({
+                                    isGroupHeader: true,
+                                    periodLabel: 'Periode ' + (periodIdx + 1),
+                                    rangeText: rangeText,
+                                    colSpan: colSpan,
                                 });
-                            }
+
+                                periodItems.forEach(function (item) { order.push(item); });
+                            });
 
                             return order;
                         }
@@ -762,6 +817,7 @@ body.modal-open {
                             chartAnalisa.update();
 
                             if (response.has_data && typeof renderDetailRows === 'function' && typeof defaultDetailOrder !== 'undefined') {
+                                $('#detailHead').html(defaultHeadHtml);
                                 renderDetailRows(defaultDetailOrder);
                             }
 
@@ -805,7 +861,7 @@ body.modal-open {
 
                                     if (datasetIndex === 0) {
                                         var monthName = sourceLabels[ym.monthIndex] || new Date(ym.year, ym.monthIndex, 1).toLocaleString('id-ID', { month: 'long' });
-                                        newLabels.push(monthName + ' ' + ym.year);
+                                        newLabels.push(monthName);
                                     }
 
                                     data.push(point.value !== undefined ? point.value : null);
@@ -817,6 +873,20 @@ body.modal-open {
                                 }
 
                                 cloned.data = data;
+                                                                var basePeriodeLabel = 'Periode ' + (datasetIndex + 1);
+                                                                var newestStep = periodOffsets[datasetIndex] * windowSize;
+                                                                var oldestStep = newestStep + (windowSize - 1);
+                                                                var newestYmL = shiftMonth(clickedYear, clickedDataIndex, -newestStep);
+                                                                var oldestYmL = shiftMonth(clickedYear, clickedDataIndex, -oldestStep);
+                                                                var nName = sourceLabels[newestYmL.monthIndex] || new Date(newestYmL.year, newestYmL.monthIndex, 1).toLocaleString('id-ID', { month: 'short' });
+                                                                var oName = sourceLabels[oldestYmL.monthIndex] || new Date(oldestYmL.year, oldestYmL.monthIndex, 1).toLocaleString('id-ID', { month: 'short' });
+                                                                if (windowSize === 1) {
+                                                                    cloned.label = basePeriodeLabel + ' (' + nName + ' ' + newestYmL.year + ')';
+                                                                } else if (newestYmL.year === oldestYmL.year) {
+                                                                    cloned.label = basePeriodeLabel + ' (' + oName + ' \u2013 ' + nName + ' ' + newestYmL.year + ')';
+                                                                } else {
+                                                                    cloned.label = basePeriodeLabel + ' (' + oName + ' ' + oldestYmL.year + ' \u2013 ' + nName + ' ' + newestYmL.year + ')';
+                                                                }
                                 cloned.temuan = temuan;
                                 cloned.pointBackgroundColor = pointBackgroundColor;
                                 cloned.pointBorderColor = pointBorderColor;
@@ -831,6 +901,17 @@ body.modal-open {
                             chartAnalisa.update();
 
                             if (response.has_data && typeof renderDetailRows === 'function') {
+                                $('#detailHead').html(
+                                    '<tr>' +
+                                    '<th>Bulan</th>' +
+                                    '<th class="text-center">Pemakaian KWH</th>' +
+                                    '<th class="text-center">Jam Nyala</th>' +
+                                    '<th class="text-center">Selisih Bulanan</th>' +
+                                    '<th class="text-center">Selisih Triwulan</th>' +
+                                    '<th class="text-center">Selisih Semester</th>' +
+                                    '<th class="text-center">Selisih Tahunan</th>' +
+                                    '</tr>'
+                                );
                                 renderDetailRows(buildCountdownDetailOrder(clickedYear, clickedDataIndex, sourceLabels, windowSize));
                             }
 
