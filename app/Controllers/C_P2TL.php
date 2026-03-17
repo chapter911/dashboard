@@ -960,6 +960,33 @@ class C_P2TL extends BaseController
             ['JN RATA-RATA', 'RATA-RATA GOL', 'KONDISI', 'MIN', 'MAX', 'DLPD', 'COUNT EMIN']
         );
 
+        $unitLabel = 'Semua Unit';
+        if (! $isAdmin && $userUnitId !== null) {
+            $unitLabel = (string) (session('unit_name') ?? ('Unit ' . $userUnitId));
+        } elseif ($unit !== '' && $unit !== '*') {
+            $unitLabel = 'Unit ' . (string) ((int) $unit);
+            foreach ($this->p2tlModel->getUnits() as $unitRow) {
+                if ((string) ($unitRow['unit_id'] ?? '') === (string) ((int) $unit)) {
+                    $unitLabel = (string) ($unitRow['unit_name'] ?? $unitLabel);
+                    break;
+                }
+            }
+        }
+
+        $temuanLabel = 'Semua';
+        $temuanRaw = strtolower(trim($temuanStatus));
+        if ($temuanRaw === 'has') {
+            $temuanLabel = 'Ada Temuan';
+        } elseif ($temuanRaw === 'none') {
+            $temuanLabel = 'Tanpa Temuan';
+        } elseif ($temuanRaw !== '' && $temuanRaw !== '*') {
+            $temuanLabel = strtoupper($temuanStatus);
+        }
+
+        $idpelFilter = $idpel !== '' ? $idpel : 'Semua';
+        $exportedBy = (string) (session('username') ?? 'system');
+        $exportedAt = date('d-m-Y H:i:s');
+
         $idpels = [];
         foreach ($rows as $row) {
             $normalizedIdpel = trim((string) ($row['idpel'] ?? ''));
@@ -1011,30 +1038,71 @@ class C_P2TL extends BaseController
         $spreadsheet = new \PhpOffice\PhpSpreadsheet\Spreadsheet();
         $sheet = $spreadsheet->getActiveSheet();
         $sheet->setTitle('Analisa');
-        $sheet->fromArray($headers, null, 'A1');
+        $columnCount = count($headers);
+        $lastColumn = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($columnCount);
 
-        $rowNum = 2;
+        $sheet->mergeCells('A1:' . $lastColumn . '1');
+        $sheet->setCellValue('A1', 'EXPORT ANALISA P2TL');
+        $sheet->setCellValue('A3', 'Tahun');
+        $sheet->setCellValue('B3', (string) $year);
+        $sheet->setCellValue('A4', 'Unit');
+        $sheet->setCellValue('B4', $unitLabel);
+        $sheet->setCellValue('A5', 'IDPEL');
+        $sheet->setCellValue('B5', $idpelFilter);
+        $sheet->setCellValue('A6', 'Status Temuan');
+        $sheet->setCellValue('B6', $temuanLabel);
+        $sheet->setCellValue('D3', 'Diexport Oleh');
+        $sheet->setCellValue('E3', $exportedBy);
+        $sheet->setCellValue('D4', 'Waktu Export');
+        $sheet->setCellValue('E4', $exportedAt);
+
+        $headerRow = 8;
+        $sheet->fromArray($headers, null, 'A' . $headerRow);
+
+        $rowNum = $headerRow + 1;
         foreach ($exportRows as $line) {
             $sheet->fromArray($line, null, 'A' . $rowNum);
             $rowNum++;
         }
 
-        $lastDataRow = max(2, $rowNum - 1);
+        $lastDataRow = max($headerRow + 1, $rowNum - 1);
 
         // Numeric display formatting for DAYA, kolom 1-24, JN rata-rata, rata-rata gol, MIN, MAX, COUNT EMIN.
-        $sheet->getStyle('D2:AD' . $lastDataRow)
+        $sheet->getStyle('D' . ($headerRow + 1) . ':AD' . $lastDataRow)
             ->getNumberFormat()
             ->setFormatCode('#,##0');
-        $sheet->getStyle('AF2:AG' . $lastDataRow)
+        $sheet->getStyle('AF' . ($headerRow + 1) . ':AG' . $lastDataRow)
             ->getNumberFormat()
             ->setFormatCode('#,##0');
-        $sheet->getStyle('AI2:AI' . $lastDataRow)
+        $sheet->getStyle('AI' . ($headerRow + 1) . ':AI' . $lastDataRow)
             ->getNumberFormat()
             ->setFormatCode('#,##0');
 
-        $columnCount = count($headers);
-        $lastColumn = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($columnCount);
-        $sheet->getStyle('A1:' . $lastColumn . '1')->getFont()->setBold(true);
+        $sheet->getStyle('A1')->getFont()->setBold(true)->setSize(14);
+        $sheet->getStyle('A1:' . $lastColumn . '1')->getAlignment()
+            ->setHorizontal(\PhpOffice\PhpSpreadsheet\Style\Alignment::HORIZONTAL_CENTER)
+            ->setVertical(\PhpOffice\PhpSpreadsheet\Style\Alignment::VERTICAL_CENTER);
+        $sheet->getStyle('A1:' . $lastColumn . '1')->getFill()
+            ->setFillType(\PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID)
+            ->getStartColor()->setARGB('FF1F4E78');
+        $sheet->getStyle('A1:' . $lastColumn . '1')->getFont()->getColor()->setARGB('FFFFFFFF');
+
+        $sheet->getStyle('A3:A6')->getFont()->setBold(true);
+        $sheet->getStyle('D3:D4')->getFont()->setBold(true);
+
+        $sheet->getStyle('A' . $headerRow . ':' . $lastColumn . $headerRow)->getFont()->setBold(true);
+        $sheet->getStyle('A' . $headerRow . ':' . $lastColumn . $headerRow)->getFill()
+            ->setFillType(\PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID)
+            ->getStartColor()->setARGB('FFD9E1F2');
+
+        $tableRange = 'A' . $headerRow . ':' . $lastColumn . $lastDataRow;
+        $sheet->getStyle($tableRange)->getBorders()->getAllBorders()
+            ->setBorderStyle(\PhpOffice\PhpSpreadsheet\Style\Border::BORDER_THIN)
+            ->getColor()->setARGB('FFBFBFBF');
+
+        $sheet->setAutoFilter('A' . $headerRow . ':' . $lastColumn . $headerRow);
+        $sheet->freezePane('A' . ($headerRow + 1));
+
         for ($colIndex = 1; $colIndex <= $columnCount; $colIndex++) {
             $col = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($colIndex);
             $sheet->getColumnDimension($col)->setAutoSize(true);
