@@ -16,6 +16,11 @@ class Setting extends BaseController
     private const SYNC_BATCH_MAX = 50000;
     private const SEEDER_RUNS_TABLE = 'seeder_runs';
 
+    /**
+     * @var array<string, array<string, bool>>
+     */
+    private array $tableFieldMapCache = [];
+
     public function index(): string
     {
         return $this->application();
@@ -1369,6 +1374,10 @@ class Setting extends BaseController
             return;
         }
 
+        if (! $this->tableHasField($db, $table, 'id')) {
+            return;
+        }
+
         foreach ($rows as $id => $row) {
             if (! is_array($row)) {
                 continue;
@@ -1382,6 +1391,10 @@ class Setting extends BaseController
             $payload = [];
             foreach ($schema as $field => $type) {
                 if (! array_key_exists($field, $row)) {
+                    continue;
+                }
+
+                if (! $this->tableHasField($db, $table, $field)) {
                     continue;
                 }
 
@@ -1415,6 +1428,25 @@ class Setting extends BaseController
 
             $db->table($table)->where('id', $menuId)->update($payload);
         }
+    }
+
+    private function tableHasField(BaseConnection $db, string $table, string $field): bool
+    {
+        if (! isset($this->tableFieldMapCache[$table])) {
+            $fields = $db->getFieldNames($table);
+            $map = [];
+            foreach ($fields as $name) {
+                if (! is_string($name) || $name === '') {
+                    continue;
+                }
+
+                $map[strtolower($name)] = true;
+            }
+
+            $this->tableFieldMapCache[$table] = $map;
+        }
+
+        return isset($this->tableFieldMapCache[$table][strtolower($field)]);
     }
 
     /**
