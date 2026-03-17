@@ -1269,6 +1269,141 @@ SQL;
         return $rows['rows'];
     }
 
+    /**
+     * Build 24 months jam nyala sequence before latest temuan month in selected year.
+     *
+     * @param list<string> $idpels
+     * @return array<string, array<int, float|null>>
+     */
+    public function getAnalisaPreTemuanJamNyalaSeries(int $year, array $idpels, bool $isAdmin, ?int $userUnitId = null, string $unit = '*'): array
+    {
+        $cleanIdpels = [];
+        foreach ($idpels as $idpel) {
+            $normalized = trim((string) $idpel);
+            if ($normalized === '') {
+                continue;
+            }
+
+            $cleanIdpels[$normalized] = true;
+        }
+
+        if ($cleanIdpels === []) {
+            return [];
+        }
+
+        $idpelList = array_keys($cleanIdpels);
+        $result = [];
+        foreach ($idpelList as $idpel) {
+            $result[$idpel] = [];
+            for ($i = 1; $i <= 24; $i++) {
+                $result[$idpel][$i] = null;
+            }
+        }
+
+        $placeholder = implode(',', array_fill(0, count($idpelList), '?'));
+        $periodStart = sprintf('%04d-01-01', $year);
+        $periodEnd = sprintf('%04d-01-01', $year + 1);
+
+        $temuanSql = "SELECT
+                p.idpel,
+                MAX(DATE(p.tanggal_register)) AS latest_temuan_date
+            FROM trn_p2tl p
+            WHERE p.idpel IN ({$placeholder})
+                AND p.tanggal_register >= ?
+                AND p.tanggal_register < ?
+                AND REPLACE(REPLACE(UPPER(TRIM(p.gol)), 'TEMUAN - ', ''), 'TEMUAN-', '') IN ('P1', 'P2', 'P3', 'P4', 'K2')";
+
+        $temuanBinds = $idpelList;
+        $temuanBinds[] = $periodStart;
+        $temuanBinds[] = $periodEnd;
+
+        if (! $isAdmin && $userUnitId !== null) {
+            $temuanSql .= ' AND p.unit_id = ?';
+            $temuanBinds[] = (string) $userUnitId;
+        } elseif ($unit !== '' && $unit !== '*') {
+            $temuanSql .= ' AND p.unit_id = ?';
+            $temuanBinds[] = (string) ((int) $unit);
+        }
+
+        $temuanSql .= ' GROUP BY p.idpel';
+        $temuanRows = $this->db->query($temuanSql, $temuanBinds)->getResultArray();
+
+        $anchors = [];
+        foreach ($temuanRows as $row) {
+            $idpel = trim((string) ($row['idpel'] ?? ''));
+            $latestDate = trim((string) ($row['latest_temuan_date'] ?? ''));
+            if ($idpel === '' || $latestDate === '') {
+                continue;
+            }
+
+            $latestTs = strtotime($latestDate);
+            if ($latestTs === false) {
+                continue;
+            }
+
+            // Col 1 = month before temuan month.
+            $anchors[$idpel] = date('Y-m', strtotime('-1 month', strtotime(date('Y-m-01', $latestTs))));
+        }
+
+        if ($anchors === []) {
+            return $result;
+        }
+
+        $analisaStart = sprintf('%04d-01-01', $year - 2);
+        $analisaEnd = sprintf('%04d-01-01', $year + 1);
+
+        $analisaSql = "SELECT
+                a.idpel,
+                DATE_FORMAT(a.periode, '%Y-%m') AS ym,
+                AVG((a.pemakaian_kwh / NULLIF(a.daya, 0)) * 1000) AS jam_nyala
+            FROM trn_p2tl_analisa a
+            WHERE a.idpel IN ({$placeholder})
+                AND a.periode >= ?
+                AND a.periode < ?
+                AND a.pemakaian_kwh IS NOT NULL
+                AND a.daya IS NOT NULL";
+
+        $analisaBinds = $idpelList;
+        $analisaBinds[] = $analisaStart;
+        $analisaBinds[] = $analisaEnd;
+
+        if (! $isAdmin && $userUnitId !== null) {
+            $analisaSql .= ' AND a.unit_id = ?';
+            $analisaBinds[] = (string) $userUnitId;
+        } elseif ($unit !== '' && $unit !== '*') {
+            $analisaSql .= ' AND a.unit_id = ?';
+            $analisaBinds[] = (string) ((int) $unit);
+        }
+
+        $analisaSql .= ' GROUP BY a.idpel, YEAR(a.periode), MONTH(a.periode)';
+        $analisaRows = $this->db->query($analisaSql, $analisaBinds)->getResultArray();
+
+        $jamNyalaMap = [];
+        foreach ($analisaRows as $row) {
+            $idpel = trim((string) ($row['idpel'] ?? ''));
+            $ym = trim((string) ($row['ym'] ?? ''));
+            if ($idpel === '' || $ym === '') {
+                continue;
+            }
+
+            $jamNyalaMap[$idpel][$ym] = $row['jam_nyala'] !== null ? (float) $row['jam_nyala'] : null;
+        }
+
+        foreach ($anchors as $idpel => $anchorYm) {
+            $anchorTs = strtotime($anchorYm . '-01');
+            if ($anchorTs === false) {
+                continue;
+            }
+
+            for ($i = 1; $i <= 24; $i++) {
+                $ym = date('Y-m', strtotime('-' . ($i - 1) . ' month', $anchorTs));
+                $result[$idpel][$i] = $jamNyalaMap[$idpel][$ym] ?? null;
+            }
+        }
+
+        return $result;
+    }
+
     public function replaceAnalisaByPeriodUnit(string $period, int $unitId, array $rows): void
     {
         $this->db->transStart();

@@ -953,7 +953,24 @@ class C_P2TL extends BaseController
         $userUnitId = session('unit_id') !== null ? (int) session('unit_id') : null;
         $rows = $this->p2tlModel->getAnalisaSummaryExport($year, $unit, $idpel, $isAdmin, $userUnitId, $temuanStatus);
 
-        $headers = ['NO', 'IDPEL', 'TARIF', 'DAYA', 'JN RATA-RATA', 'RATA-RATA GOL', 'KONDISI', 'MIN', 'MAX', 'DLPD', 'COUNT EMIN'];
+        $preTemuanHeaders = array_map(static fn(int $n): string => (string) $n, range(1, 24));
+        $headers = array_merge(
+            ['NO', 'IDPEL', 'TARIF', 'DAYA'],
+            $preTemuanHeaders,
+            ['JN RATA-RATA', 'RATA-RATA GOL', 'KONDISI', 'MIN', 'MAX', 'DLPD', 'COUNT EMIN']
+        );
+
+        $idpels = [];
+        foreach ($rows as $row) {
+            $normalizedIdpel = trim((string) ($row['idpel'] ?? ''));
+            if ($normalizedIdpel === '') {
+                continue;
+            }
+
+            $idpels[] = $normalizedIdpel;
+        }
+
+        $preTemuanJamNyala = $this->p2tlModel->getAnalisaPreTemuanJamNyalaSeries($year, $idpels, $isAdmin, $userUnitId, $unit);
         $exportRows = [];
 
         $no = 1;
@@ -963,11 +980,22 @@ class C_P2TL extends BaseController
             $dlpd = $jamRata === null ? '-' : ($jamRata < 40 ? '< 40' : ($jamRata > 720 ? '> 720' : 'Normal'));
             $kondisi = ($jamRata !== null && $rata !== null && $jamRata > $rata) ? 'diatas rata-rata' : 'dibawah rata-rata';
 
-            $exportRows[] = [
+            $idpelValue = (string) ($row['idpel'] ?? '');
+            $series = $preTemuanJamNyala[$idpelValue] ?? [];
+            $preTemuanValues = [];
+            for ($i = 1; $i <= 24; $i++) {
+                $value = $series[$i] ?? null;
+                $preTemuanValues[] = $value === null ? '-' : (int) round((float) $value);
+            }
+
+            $baseRow = [
                 $no++,
-                (string) ($row['idpel'] ?? ''),
+                $idpelValue,
                 (string) ($row['tarif'] ?? ''),
                 (float) ($row['daya'] ?? 0),
+            ];
+
+            $tailRow = [
                 (float) ($row['jam_nyala_rata'] ?? 0),
                 (float) ($row['rata_rata_daya'] ?? 0),
                 $kondisi,
@@ -976,6 +1004,8 @@ class C_P2TL extends BaseController
                 $dlpd,
                 (int) ($row['counting_emin'] ?? 0),
             ];
+
+            $exportRows[] = array_merge($baseRow, $preTemuanValues, $tailRow);
         }
 
         $spreadsheet = new \PhpOffice\PhpSpreadsheet\Spreadsheet();
@@ -989,8 +1019,24 @@ class C_P2TL extends BaseController
             $rowNum++;
         }
 
-        $sheet->getStyle('A1:K1')->getFont()->setBold(true);
-        foreach (range('A', 'K') as $col) {
+        $lastDataRow = max(2, $rowNum - 1);
+
+        // Numeric display formatting for DAYA, kolom 1-24, JN rata-rata, rata-rata gol, MIN, MAX, COUNT EMIN.
+        $sheet->getStyle('D2:AD' . $lastDataRow)
+            ->getNumberFormat()
+            ->setFormatCode('#,##0');
+        $sheet->getStyle('AF2:AG' . $lastDataRow)
+            ->getNumberFormat()
+            ->setFormatCode('#,##0');
+        $sheet->getStyle('AI2:AI' . $lastDataRow)
+            ->getNumberFormat()
+            ->setFormatCode('#,##0');
+
+        $columnCount = count($headers);
+        $lastColumn = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($columnCount);
+        $sheet->getStyle('A1:' . $lastColumn . '1')->getFont()->setBold(true);
+        for ($colIndex = 1; $colIndex <= $columnCount; $colIndex++) {
+            $col = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($colIndex);
             $sheet->getColumnDimension($col)->setAutoSize(true);
         }
 

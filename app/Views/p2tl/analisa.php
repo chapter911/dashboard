@@ -46,7 +46,7 @@ body.modal-open {
         <h5 class="mb-0\"><?= esc($pageHeading ?? 'Analisa P2TL') ?></h5>
         <div class="d-flex gap-2">
             <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#modalImportAnalisa">Import Analisa</button>
-            <button type="button" class="btn btn-primary" id="btnExportAnalisa">Export Analisa</button>
+            <button type="button" class="btn btn-success" id="btnExportAnalisa">Export Analisa</button>
         </div>
     </div>
     <div class="card-body">
