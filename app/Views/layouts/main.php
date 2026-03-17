@@ -803,6 +803,16 @@
                 };
             }
 
+            function updateAllCsrfInputs(token, hash) {
+                if (!token || !hash) {
+                    return;
+                }
+
+                document.querySelectorAll('input[name="' + token + '"]').forEach(function (input) {
+                    input.value = hash;
+                });
+            }
+
             function updateGitPullCsrf(formElement, token, hash) {
                 if (!(formElement instanceof HTMLFormElement) || !token || !hash) {
                     return;
@@ -812,6 +822,9 @@
                 if (csrfInput) {
                     csrfInput.value = hash;
                 }
+
+                // Keep all page forms in sync because CSRF token regenerates on each POST.
+                updateAllCsrfInputs(token, hash);
             }
 
             function setGitPullButtonState(button, badge, options) {
