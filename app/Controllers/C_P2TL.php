@@ -1072,6 +1072,12 @@ class C_P2TL extends BaseController
         $rowNum = $headerRow + 1;
         foreach ($exportRows as $line) {
             $sheet->fromArray($line, null, 'A' . $rowNum);
+            // Keep IDPEL intact (no scientific notation) by writing it as explicit text.
+            $sheet->setCellValueExplicit(
+                'B' . $rowNum,
+                (string) ($line[1] ?? ''),
+                \PhpOffice\PhpSpreadsheet\Cell\DataType::TYPE_STRING
+            );
             $rowNum++;
         }
 
@@ -1081,6 +1087,9 @@ class C_P2TL extends BaseController
         $sheet->getStyle('D' . ($headerRow + 1) . ':AD' . $lastDataRow)
             ->getNumberFormat()
             ->setFormatCode('#,##0');
+        $sheet->getStyle('B' . ($headerRow + 1) . ':B' . $lastDataRow)
+            ->getNumberFormat()
+            ->setFormatCode('@');
         $sheet->getStyle('AF' . ($headerRow + 1) . ':AG' . $lastDataRow)
             ->getNumberFormat()
             ->setFormatCode('#,##0');
