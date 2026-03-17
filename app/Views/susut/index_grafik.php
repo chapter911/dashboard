@@ -124,7 +124,7 @@ $currentYear = (int) date('Y');
                 opacity: 0.9
             }
         },
-        stroke: { curve: 'straight', width: 2 },
+        stroke: { curve: 'smooth', width: 4 },
         colors: ['#4CAF50', '#F44336'],
         grid: {
             show: true
@@ -247,8 +247,8 @@ $currentYear = (int) date('Y');
                 align: 'center'
             },
             stroke: {
-                curve: 'straight',
-                width: [2, 2, 2],
+                curve: 'smooth',
+                width: [4, 4, 4],
                 dashArray: [0, 0, 6]
             },
             yaxis: {
