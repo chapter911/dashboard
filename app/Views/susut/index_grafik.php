@@ -136,16 +136,17 @@ $currentYear = (int) date('Y');
         yaxis: {
             title: { text: '(%)' },
             max: 10,
+            min: 0,
             labels: {
                 formatter: function (value) {
-                    return new Intl.NumberFormat('id-ID', { maximumFractionDigits: 2 }).format(value);
+                    return new Intl.NumberFormat('id-ID', { maximumFractionDigits: 0 }).format(Math.round(value));
                 }
             }
         },
         tooltip: {
             y: {
                 formatter: function (val) {
-                    return new Intl.NumberFormat('id-ID', { maximumFractionDigits: 2 }).format(val);
+                    return new Intl.NumberFormat('id-ID', { maximumFractionDigits: 0 }).format(Math.round(val));
                 }
             }
         },
@@ -217,17 +218,14 @@ $currentYear = (int) date('Y');
         susutChart.updateSeries([
             {
                 name: 'Bulanan',
-                type: 'line',
                 data: monthlyData
             },
             {
                 name: 'Akumulasi',
-                type: 'line',
                 data: cumulativeData
             },
             {
                 name: 'Target',
-                type: 'column',
                 data: targetSeriesData
             }
         ]);
@@ -240,21 +238,27 @@ $currentYear = (int) date('Y');
         var allValues = monthlyData.concat(cumulativeData, targetSeriesData);
         var maxVal = Math.max.apply(null, allValues.concat([0]));
         var minVal = Math.min.apply(null, allValues.concat([0]));
-        var yAxisMax = maxVal > 10 ? undefined : 10;
-        var yAxisMin = minVal < 0 ? (minVal < -10 ? undefined : -10) : 0;
+        var yAxisMax = maxVal > 10 ? Math.ceil(maxVal) : 10;
+        var yAxisMin = minVal < 0 ? Math.floor(minVal) : 0;
 
         susutChart.updateOptions({
             title: {
                 text: typeLabel,
                 align: 'center'
             },
+            stroke: {
+                curve: 'straight',
+                width: [2, 2, 2],
+                dashArray: [0, 0, 6]
+            },
             yaxis: {
                 title: { text: '(%)' },
                 min: yAxisMin,
                 max: yAxisMax,
+                forceNiceScale: true,
                 labels: {
                     formatter: function (value) {
-                        return new Intl.NumberFormat('id-ID', { maximumFractionDigits: 2 }).format(value);
+                        return new Intl.NumberFormat('id-ID', { maximumFractionDigits: 0 }).format(Math.round(value));
                     }
                 }
             },
