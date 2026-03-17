@@ -1059,6 +1059,16 @@ class C_P2TL extends BaseController
         $headerRow = 8;
         $sheet->fromArray($headers, null, 'A' . $headerRow);
 
+        // Force pre-temuan headers (1..24) as text so they are always visible in Excel.
+        for ($i = 1; $i <= 24; $i++) {
+            $col = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex(4 + $i);
+            $sheet->setCellValueExplicit(
+                $col . $headerRow,
+                (string) $i,
+                \PhpOffice\PhpSpreadsheet\Cell\DataType::TYPE_STRING
+            );
+        }
+
         $rowNum = $headerRow + 1;
         foreach ($exportRows as $line) {
             $sheet->fromArray($line, null, 'A' . $rowNum);
@@ -1094,13 +1104,14 @@ class C_P2TL extends BaseController
         $sheet->getStyle('A' . $headerRow . ':' . $lastColumn . $headerRow)->getFill()
             ->setFillType(\PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID)
             ->getStartColor()->setARGB('FFD9E1F2');
+        $sheet->getStyle('E' . $headerRow . ':AB' . $headerRow)->getAlignment()
+            ->setHorizontal(\PhpOffice\PhpSpreadsheet\Style\Alignment::HORIZONTAL_CENTER);
 
         $tableRange = 'A' . $headerRow . ':' . $lastColumn . $lastDataRow;
         $sheet->getStyle($tableRange)->getBorders()->getAllBorders()
             ->setBorderStyle(\PhpOffice\PhpSpreadsheet\Style\Border::BORDER_THIN)
             ->getColor()->setARGB('FFBFBFBF');
 
-        $sheet->setAutoFilter('A' . $headerRow . ':' . $lastColumn . $headerRow);
         $sheet->freezePane('A' . ($headerRow + 1));
 
         for ($colIndex = 1; $colIndex <= $columnCount; $colIndex++) {
