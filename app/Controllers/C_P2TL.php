@@ -1245,14 +1245,14 @@ class C_P2TL extends BaseController
             if ($insertedRows > 0 || $processedUnits > 0) {
                 $namaBulan = ['', 'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];
                 $bulanText = $namaBulan[$month] ?? (string) $month;
-                $unitText = count($processedUnitIds) > 0 ? implode(', ', $processedUnitIds) : '-';
+                $unitNames = $this->getUnitNames($processedUnitIds);
 
                 session()->setFlashdata('import_analisa_alert', [
                     'icon' => 'warning',
                     'title' => 'Import Sebagian',
                     'year' => $year,
                     'month' => $bulanText,
-                    'units' => $unitText,
+                    'units' => $unitNames,
                     'inserted' => $insertedRows,
                     'invalid' => $invalidRows,
                     'processedUnits' => $processedUnits,
@@ -1283,7 +1283,7 @@ class C_P2TL extends BaseController
 
         $namaBulan = ['', 'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];
         $bulanText = $namaBulan[$month] ?? (string) $month;
-        $unitText = count($processedUnitIds) > 0 ? implode(', ', $processedUnitIds) : '-';
+        $unitNames = $this->getUnitNames($processedUnitIds);
 
         if ($invalidRows > 0) {
             session()->setFlashdata('import_analisa_alert', [
@@ -1291,7 +1291,7 @@ class C_P2TL extends BaseController
                 'title' => 'Import Sebagian',
                 'year' => $year,
                 'month' => $bulanText,
-                'units' => $unitText,
+                'units' => $unitNames,
                 'inserted' => $insertedRows,
                 'invalid' => $invalidRows,
                 'processedUnits' => $processedUnits,
@@ -1304,7 +1304,7 @@ class C_P2TL extends BaseController
             'title' => 'Import Berhasil',
             'year' => $year,
             'month' => $bulanText,
-            'units' => $unitText,
+            'units' => $unitNames,
             'inserted' => $insertedRows,
             'invalid' => $invalidRows,
             'processedUnits' => $processedUnits,
@@ -1755,6 +1755,32 @@ class C_P2TL extends BaseController
         }
 
         return is_numeric($value) ? (float) $value : null;
+    }
+
+    private function getUnitNames(array $unitIds): string
+    {
+        if (count($unitIds) === 0) {
+            return '-';
+        }
+
+        $units = $this->db->table('mst_unit')
+            ->select('unit_id, unit_name')
+            ->whereIn('unit_id', $unitIds)
+            ->orderBy('unit_id', 'ASC')
+            ->get()
+            ->getResultArray();
+
+        $unitMap = [];
+        foreach ($units as $unit) {
+            $unitMap[(int) ($unit['unit_id'] ?? 0)] = (string) ($unit['unit_name'] ?? '');
+        }
+
+        $names = [];
+        foreach ($unitIds as $id) {
+            $names[] = $unitMap[$id] ?? 'Unit ' . $id;
+        }
+
+        return implode(', ', $names);
     }
 
     private function normalizeDateCell(mixed $value): ?string
