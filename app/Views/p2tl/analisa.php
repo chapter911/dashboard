@@ -230,10 +230,35 @@ body.modal-open {
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
             <div class="modal-body">
-                <div class="d-flex align-items-start gap-3">
+                <div class="d-flex align-items-start gap-3 mb-3">
                     <div id="importResultIcon" style="font-size: 2.5rem;"></div>
                     <div id="importResultContent" class="flex-grow-1">
                         <p id="importResultText" class="mb-0"></p>
+                    </div>
+                </div>
+                <div id="importResultDetails" style="display: none;">
+                    <hr class="my-3">
+                    <div class="small">
+                        <div class="row mb-2">
+                            <div class="col-sm-4 fw-semibold">Tahun:</div>
+                            <div class="col-sm-8" id="detailYear">-</div>
+                        </div>
+                        <div class="row mb-2">
+                            <div class="col-sm-4 fw-semibold">Bulan:</div>
+                            <div class="col-sm-8" id="detailMonth">-</div>
+                        </div>
+                        <div class="row mb-2">
+                            <div class="col-sm-4 fw-semibold">Unit:</div>
+                            <div class="col-sm-8" id="detailUnits">-</div>
+                        </div>
+                        <div class="row mb-2">
+                            <div class="col-sm-4 fw-semibold">Data Sukses:</div>
+                            <div class="col-sm-8 text-success fw-semibold" id="detailInserted">-</div>
+                        </div>
+                        <div class="row mb-2" id="rowInvalid" style="display: none;">
+                            <div class="col-sm-4 fw-semibold">Data Gagal:</div>
+                            <div class="col-sm-8 text-danger" id="detailInvalid">-</div>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -278,6 +303,7 @@ body.modal-open {
     var iconEl = document.getElementById('importResultIcon');
     var titleEl = document.getElementById('importResultTitle');
     var textEl = document.getElementById('importResultText');
+    var detailsEl = document.getElementById('importResultDetails');
 
     if (iconEl) {
         iconEl.textContent = icons[icon] || 'ℹ';
@@ -289,7 +315,37 @@ body.modal-open {
     }
 
     if (textEl) {
-        textEl.textContent = alertData.text || '';
+        if (alertData.text) {
+            textEl.textContent = alertData.text;
+        } else {
+            textEl.textContent = 'Proses selesai.';
+        }
+    }
+
+    // Populate detail fields
+    if (alertData.year && alertData.month) {
+        if (detailsEl) {
+            detailsEl.style.display = 'block';
+        }
+
+        var yearEl = document.getElementById('detailYear');
+        var monthEl = document.getElementById('detailMonth');
+        var unitsEl = document.getElementById('detailUnits');
+        var insertedEl = document.getElementById('detailInserted');
+        var invalidEl = document.getElementById('detailInvalid');
+        var rowInvalidEl = document.getElementById('rowInvalid');
+
+        if (yearEl) yearEl.textContent = alertData.year || '-';
+        if (monthEl) monthEl.textContent = alertData.month || '-';
+        if (unitsEl) unitsEl.textContent = alertData.units || '-';
+        if (insertedEl) insertedEl.textContent = (alertData.inserted || 0) + ' baris';
+        
+        if (alertData.invalid && alertData.invalid > 0) {
+            if (rowInvalidEl) rowInvalidEl.style.display = '';
+            if (invalidEl) invalidEl.textContent = (alertData.invalid || 0) + ' baris';
+        } else {
+            if (rowInvalidEl) rowInvalidEl.style.display = 'none';
+        }
     }
 
     var modalEl = document.getElementById('modalImportResult');

@@ -1188,6 +1188,7 @@ class C_P2TL extends BaseController
         $invalidRows = 0;
         $insertedRows = 0;
         $processedUnits = 0;
+        $processedUnitIds = [];
 
         try {
             $file->move(WRITEPATH . 'uploads', $tempName);
@@ -1235,21 +1236,26 @@ class C_P2TL extends BaseController
             foreach ($payloadByUnit as $unitId => $payload) {
                 $this->p2tlModel->replaceAnalisaByPeriodUnit($period, (int) $unitId, $payload);
                 $processedUnits++;
+                $processedUnitIds[] = (int) $unitId;
                 $insertedRows += count($payload);
             }
         } catch (Throwable $e) {
             log_message('error', 'P2TL_IMPORT_ANALISA_FAILED: {message}', ['message' => $e->getMessage()]);
 
             if ($insertedRows > 0 || $processedUnits > 0) {
-                $text = 'Sebagian data berhasil diproses sebelum terjadi error. '
-                    . 'Baris tersimpan: ' . $insertedRows
-                    . ', baris tidak valid: ' . $invalidRows
-                    . ', unit berhasil diproses: ' . $processedUnits . '.';
+                $namaBulan = ['', 'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];
+                $bulanText = $namaBulan[$month] ?? (string) $month;
+                $unitText = count($processedUnitIds) > 0 ? implode(', ', $processedUnitIds) : '-';
 
                 session()->setFlashdata('import_analisa_alert', [
                     'icon' => 'warning',
                     'title' => 'Import Sebagian',
-                    'text' => $text,
+                    'year' => $year,
+                    'month' => $bulanText,
+                    'units' => $unitText,
+                    'inserted' => $insertedRows,
+                    'invalid' => $invalidRows,
+                    'processedUnits' => $processedUnits,
                 ]);
             } else {
                 session()->setFlashdata('import_analisa_alert', [
@@ -1275,25 +1281,33 @@ class C_P2TL extends BaseController
             return redirect()->to(site_url('C_P2TL/Analisa'));
         }
 
-        if ($invalidRows > 0) {
-            $text = 'Data masuk sebagian. '
-                . 'Baris tersimpan: ' . $insertedRows
-                . ', baris tidak valid: ' . $invalidRows . '.';
+        $namaBulan = ['', 'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];
+        $bulanText = $namaBulan[$month] ?? (string) $month;
+        $unitText = count($processedUnitIds) > 0 ? implode(', ', $processedUnitIds) : '-';
 
+        if ($invalidRows > 0) {
             session()->setFlashdata('import_analisa_alert', [
                 'icon' => 'warning',
                 'title' => 'Import Sebagian',
-                'text' => $text,
+                'year' => $year,
+                'month' => $bulanText,
+                'units' => $unitText,
+                'inserted' => $insertedRows,
+                'invalid' => $invalidRows,
+                'processedUnits' => $processedUnits,
             ]);
             return redirect()->to(site_url('C_P2TL/Analisa'));
         }
 
-        $text = 'Seluruh data valid berhasil dimasukkan. Total baris: ' . $insertedRows . '.';
-
         session()->setFlashdata('import_analisa_alert', [
             'icon' => 'success',
             'title' => 'Import Berhasil',
-            'text' => $text,
+            'year' => $year,
+            'month' => $bulanText,
+            'units' => $unitText,
+            'inserted' => $insertedRows,
+            'invalid' => $invalidRows,
+            'processedUnits' => $processedUnits,
         ]);
         return redirect()->to(site_url('C_P2TL/Analisa'));
     }
