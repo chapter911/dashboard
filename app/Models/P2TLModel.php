@@ -1263,7 +1263,7 @@ SQL;
             'tahun' => $year,
             'unit' => $unit,
             'idpel' => $idpel,
-            'temuan_status' => '*',
+            'temuan_status' => $temuanStatus,
         ], 0, 1000000, null, $isAdmin, $userUnitId);
 
         return $rows['rows'];

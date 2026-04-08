@@ -78,7 +78,19 @@ body.modal-open {
                 <label class="form-label">IDPEL</label>
                 <input type="text" class="form-control" id="idpel" placeholder="Cari IDPEL...">
             </div>
-
+            <div class="col-md-2">
+                <label class="form-label">Status Temuan</label>
+                <select class="form-select" id="temuan_status">
+                    <option value="*">Semua Data</option>
+                    <option value="has">Ada Temuan</option>
+                    <option value="P1">Temuan P1</option>
+                    <option value="P2">Temuan P2</option>
+                    <option value="P3">Temuan P3</option>
+                    <option value="P4">Temuan P4</option>
+                    <option value="K2">Temuan K2</option>
+                    <option value="none">Tidak Ada Temuan</option>
+                </select>
+            </div>
         </div>
 
         <div class="table-responsive">
@@ -1207,7 +1219,7 @@ body.modal-open {
         table.ajax.reload();
     }
 
-    $('#tahun, #unit').on('change', function () { reloadAnalisa(); });
+    $('#tahun, #unit, #temuan_status').on('change', function () { reloadAnalisa(); });
     $('#idpel').on('keyup', function () { table.ajax.reload(); });
 
     $('#tableAnalisa').on('preXhr.dt', function () {
@@ -1226,7 +1238,7 @@ body.modal-open {
             tahun: $('#tahun').val(),
             unit: $('#unit').val(),
             idpel: $('#idpel').val() || '',
-            temuan_status: '*'
+            temuan_status: $('#temuan_status').val() || '*'
         });
         var url = '<?= site_url('C_P2TL/exportAnalisaExcel') ?>?' + qs;
 

@@ -955,7 +955,7 @@ class C_P2TL extends BaseController
 
         $preTemuanHeaders = array_map(static fn(int $n): string => (string) $n, range(1, 24));
         $headers = array_merge(
-            ['NO', 'IDPEL', 'TARIF', 'DAYA', 'TANGGAL TEMUAN', 'TEMUAN'],
+            ['NO', 'IDPEL', 'TARIF', 'DAYA'],
             $preTemuanHeaders,
             ['JN RATA-RATA', 'RATA-RATA GOL', 'KONDISI', 'MIN', 'MAX', 'DLPD', 'COUNT EMIN']
         );
@@ -973,6 +973,16 @@ class C_P2TL extends BaseController
             }
         }
 
+        $temuanLabel = 'Semua';
+        $temuanRaw = strtolower(trim($temuanStatus));
+        if ($temuanRaw === 'has') {
+            $temuanLabel = 'Ada Temuan';
+        } elseif ($temuanRaw === 'none') {
+            $temuanLabel = 'Tanpa Temuan';
+        } elseif ($temuanRaw !== '' && $temuanRaw !== '*') {
+            $temuanLabel = strtoupper($temuanStatus);
+        }
+
         $idpelFilter = $idpel !== '' ? $idpel : 'Semua';
         $exportedBy = (string) (session('username') ?? 'system');
         $exportedAt = date('d-m-Y H:i:s');
@@ -988,50 +998,6 @@ class C_P2TL extends BaseController
         }
 
         $preTemuanJamNyala = $this->p2tlModel->getAnalisaPreTemuanJamNyalaSeries($year, $idpels, $isAdmin, $userUnitId, $unit);
-        
-        // Query temuan data for each IDPEL to get Tanggal Temuan and Temuan type
-        $temuanData = [];
-        if (!empty($idpels)) {
-            $placeholder = implode(',', array_fill(0, count($idpels), '?'));
-            $periodStart = sprintf('%04d-01-01', $year);
-            $periodEnd = sprintf('%04d-01-01', $year + 1);
-            
-            $temuanSql = "SELECT
-                    p.idpel,
-                    DATE(MAX(p.tanggal_register)) AS tanggal_temuan,
-                    REPLACE(REPLACE(UPPER(TRIM(p.gol)), 'TEMUAN - ', ''), 'TEMUAN-', '') AS temuan_type
-                FROM trn_p2tl p
-                WHERE p.idpel IN ({$placeholder})
-                    AND p.tanggal_register >= ?
-                    AND p.tanggal_register < ?
-                    AND REPLACE(REPLACE(UPPER(TRIM(p.gol)), 'TEMUAN - ', ''), 'TEMUAN-', '') IN ('P1', 'P2', 'P3', 'P4', 'K2')";
-            
-            $temuanBinds = $idpels;
-            $temuanBinds[] = $periodStart;
-            $temuanBinds[] = $periodEnd;
-            
-            if (!$isAdmin && $userUnitId !== null) {
-                $temuanSql .= ' AND p.unit_id = ?';
-                $temuanBinds[] = (string) $userUnitId;
-            } elseif ($unit !== '' && $unit !== '*') {
-                $temuanSql .= ' AND p.unit_id = ?';
-                $temuanBinds[] = (string) ((int) $unit);
-            }
-            
-            $temuanSql .= ' GROUP BY p.idpel';
-            $temuanRows = $this->db->query($temuanSql, $temuanBinds)->getResultArray();
-            
-            foreach ($temuanRows as $tr) {
-                $normalizedIdpel = trim((string) ($tr['idpel'] ?? ''));
-                if ($normalizedIdpel !== '') {
-                    $temuanData[$normalizedIdpel] = [
-                        'tanggal' => (string) ($tr['tanggal_temuan'] ?? ''),
-                        'type' => (string) ($tr['temuan_type'] ?? ''),
-                    ];
-                }
-            }
-        }
-        
         $exportRows = [];
 
         $no = 1;
@@ -1054,8 +1020,6 @@ class C_P2TL extends BaseController
                 $idpelValue,
                 (string) ($row['tarif'] ?? ''),
                 (float) ($row['daya'] ?? 0),
-                (string) ($temuanData[$idpelValue]['tanggal'] ?? ''),
-                (string) ($temuanData[$idpelValue]['type'] ?? ''),
             ];
 
             $tailRow = [
@@ -1085,6 +1049,8 @@ class C_P2TL extends BaseController
         $sheet->setCellValue('B4', $unitLabel);
         $sheet->setCellValue('A5', 'IDPEL');
         $sheet->setCellValue('B5', $idpelFilter);
+        $sheet->setCellValue('A6', 'Status Temuan');
+        $sheet->setCellValue('B6', $temuanLabel);
         $sheet->setCellValue('D3', 'Diexport Oleh');
         $sheet->setCellValue('E3', $exportedBy);
         $sheet->setCellValue('D4', 'Waktu Export');
@@ -1095,7 +1061,7 @@ class C_P2TL extends BaseController
 
         // Force pre-temuan headers (1..24) as text so they are always visible in Excel.
         for ($i = 1; $i <= 24; $i++) {
-            $col = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex(6 + $i);
+            $col = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex(4 + $i);
             $sheet->setCellValueExplicit(
                 $col . $headerRow,
                 (string) $i,
@@ -1118,23 +1084,16 @@ class C_P2TL extends BaseController
         $lastDataRow = max($headerRow + 1, $rowNum - 1);
 
         // Numeric display formatting for DAYA, kolom 1-24, JN rata-rata, rata-rata gol, MIN, MAX, COUNT EMIN.
-        // Column mapping: D=DAYA, E:F=TANGGAL/TEMUAN, G:AF=[1-24]+JN+RATA, AG=KONDISI, AH:AK=MIN/MAX/DLPD/COUNT
-        $sheet->getStyle('D' . ($headerRow + 1) . ':D' . $lastDataRow)
-            ->getNumberFormat()
-            ->setFormatCode('#,##0.00');
-        $sheet->getStyle('E' . ($headerRow + 1) . ':F' . $lastDataRow)
-            ->getNumberFormat()
-            ->setFormatCode('@');
-        $sheet->getStyle('G' . ($headerRow + 1) . ':AF' . $lastDataRow)
+        $sheet->getStyle('D' . ($headerRow + 1) . ':AD' . $lastDataRow)
             ->getNumberFormat()
             ->setFormatCode('#,##0');
         $sheet->getStyle('B' . ($headerRow + 1) . ':B' . $lastDataRow)
             ->getNumberFormat()
             ->setFormatCode('@');
-        $sheet->getStyle('AE' . ($headerRow + 1) . ':AF' . $lastDataRow)
+        $sheet->getStyle('AF' . ($headerRow + 1) . ':AG' . $lastDataRow)
             ->getNumberFormat()
             ->setFormatCode('#,##0');
-        $sheet->getStyle('AK' . ($headerRow + 1) . ':AK' . $lastDataRow)
+        $sheet->getStyle('AI' . ($headerRow + 1) . ':AI' . $lastDataRow)
             ->getNumberFormat()
             ->setFormatCode('#,##0');
 
@@ -1147,14 +1106,14 @@ class C_P2TL extends BaseController
             ->getStartColor()->setARGB('FF1F4E78');
         $sheet->getStyle('A1:' . $lastColumn . '1')->getFont()->getColor()->setARGB('FFFFFFFF');
 
-        $sheet->getStyle('A3:A5')->getFont()->setBold(true);
+        $sheet->getStyle('A3:A6')->getFont()->setBold(true);
         $sheet->getStyle('D3:D4')->getFont()->setBold(true);
 
         $sheet->getStyle('A' . $headerRow . ':' . $lastColumn . $headerRow)->getFont()->setBold(true);
         $sheet->getStyle('A' . $headerRow . ':' . $lastColumn . $headerRow)->getFill()
             ->setFillType(\PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID)
             ->getStartColor()->setARGB('FFD9E1F2');
-        $sheet->getStyle('G' . $headerRow . ':AD' . $headerRow)->getAlignment()
+        $sheet->getStyle('E' . $headerRow . ':AB' . $headerRow)->getAlignment()
             ->setHorizontal(\PhpOffice\PhpSpreadsheet\Style\Alignment::HORIZONTAL_CENTER);
 
         $tableRange = 'A' . $headerRow . ':' . $lastColumn . $lastDataRow;
