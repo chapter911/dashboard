@@ -69,7 +69,7 @@ body.modal-open {
                         <?php endforeach; ?>
                     </select>
                 <?php else: ?>
-                    <select class="form-select" id="unit" disabled>
+                    <select class="form-select" id="unit">
                         <option value="<?= $selectedUnitId ?>"><?= esc($selectedUnitName !== '' ? $selectedUnitName : (string) $selectedUnitId) ?></option>
                     </select>
                 <?php endif; ?>
