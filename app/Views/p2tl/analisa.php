@@ -390,6 +390,7 @@ body.modal-open {
                 d.tahun = $('#tahun').val() || '<?= $selectedYear ?>';
                 d.unit = $('#unit').val();
                 d.idpel = $('#idpel').val();
+                d.temuan_status = $('#temuan_status').val();
                 d[csrfFieldName] = csrfToken;
             },
             complete: function (xhr) {
@@ -1224,7 +1225,8 @@ body.modal-open {
         var qs = $.param({
             tahun: $('#tahun').val(),
             unit: $('#unit').val(),
-            idpel: $('#idpel').val() || ''
+            idpel: $('#idpel').val() || '',
+            temuan_status: '*'
         });
         var url = '<?= site_url('C_P2TL/exportAnalisaExcel') ?>?' + qs;
 
