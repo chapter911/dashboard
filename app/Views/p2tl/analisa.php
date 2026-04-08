@@ -61,7 +61,7 @@ body.modal-open {
             </div>
             <div class="col-md-3">
                 <label class="form-label">Unit</label>
-                <?php if ($userGroupId === 1): ?>
+                <?php if (1 === 1): ?>
                     <select class="form-select" id="unit">
                         <option value="*">SEMUA UNIT</option>
                         <?php foreach (($units ?? []) as $u): ?>
@@ -69,7 +69,7 @@ body.modal-open {
                         <?php endforeach; ?>
                     </select>
                 <?php else: ?>
-                    <select class="form-select" id="unit">
+                    <select class="form-select" id="unit" disabled>
                         <option value="<?= $selectedUnitId ?>"><?= esc($selectedUnitName !== '' ? $selectedUnitName : (string) $selectedUnitId) ?></option>
                     </select>
                 <?php endif; ?>
