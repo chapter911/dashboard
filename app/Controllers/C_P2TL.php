@@ -1142,24 +1142,26 @@ class C_P2TL extends BaseController
 
     public function importAnalisa(): RedirectResponse
     {
+        $redirectAnalisa = redirect()->to(site_url('C_P2TL/Analisa'));
+
         $file = $this->request->getFile('file_import');
         $year = (int) ($this->request->getPost('tahun') ?? 0);
         if ($year < 2000 || $year > 2100) {
-            return redirect()->back()->with('error', 'Tahun harus dipilih.');
+            return $redirectAnalisa->with('error', 'Tahun harus dipilih.');
         }
 
         $month = (int) ($this->request->getPost('bulan') ?? 0);
         if ($month < 1 || $month > 12) {
-            return redirect()->back()->with('error', 'Bulan harus dipilih.');
+            return $redirectAnalisa->with('error', 'Bulan harus dipilih.');
         }
 
         if (! $file || ! $file->isValid() || $file->hasMoved()) {
-            return redirect()->back()->with('error', 'File upload tidak valid.');
+            return $redirectAnalisa->with('error', 'File upload tidak valid.');
         }
 
         $extension = strtolower((string) $file->getClientExtension());
         if (! in_array($extension, ['xls', 'xlsx'], true)) {
-            return redirect()->back()->with('error', 'Format file harus .xls atau .xlsx.');
+            return $redirectAnalisa->with('error', 'Format file harus .xls atau .xlsx.');
         }
 
         $tempName = $file->getRandomName();
@@ -1209,14 +1211,14 @@ class C_P2TL extends BaseController
             }
         } catch (Throwable $e) {
             log_message('error', 'P2TL_IMPORT_ANALISA_FAILED: {message}', ['message' => $e->getMessage()]);
-            return redirect()->back()->with('error', 'Import analisa gagal diproses.');
+            return $redirectAnalisa->with('error', 'Import analisa gagal diproses.');
         } finally {
             if (is_file($targetPath)) {
                 @unlink($targetPath);
             }
         }
 
-        return redirect()->back()->with('success', 'Import analisa berhasil.');
+        return $redirectAnalisa->with('success', 'Import analisa berhasil.');
     }
 
     public function downloadImportAnalisaTemplate(): ResponseInterface
