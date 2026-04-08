@@ -1142,42 +1142,44 @@ class C_P2TL extends BaseController
 
     public function importAnalisa(): RedirectResponse
     {
-        $redirectAnalisa = redirect()->to(site_url('C_P2TL/Analisa'));
-
-        $buildAlert = static function (string $icon, string $title, string $text): array {
-            return [
-                'icon' => $icon,
-                'title' => $title,
-                'text' => $text,
-            ];
-        };
-
         $file = $this->request->getFile('file_import');
         $year = (int) ($this->request->getPost('tahun') ?? 0);
         if ($year < 2000 || $year > 2100) {
-            return $redirectAnalisa
-                ->with('error', 'Tahun harus dipilih.')
-                ->with('import_analisa_alert', $buildAlert('error', 'Import Gagal', 'Tahun harus dipilih.'));
+            session()->setFlashdata('import_analisa_alert', [
+                'icon' => 'error',
+                'title' => 'Import Gagal',
+                'text' => 'Tahun harus dipilih.',
+            ]);
+            return redirect()->to(site_url('C_P2TL/Analisa'));
         }
 
         $month = (int) ($this->request->getPost('bulan') ?? 0);
         if ($month < 1 || $month > 12) {
-            return $redirectAnalisa
-                ->with('error', 'Bulan harus dipilih.')
-                ->with('import_analisa_alert', $buildAlert('error', 'Import Gagal', 'Bulan harus dipilih.'));
+            session()->setFlashdata('import_analisa_alert', [
+                'icon' => 'error',
+                'title' => 'Import Gagal',
+                'text' => 'Bulan harus dipilih.',
+            ]);
+            return redirect()->to(site_url('C_P2TL/Analisa'));
         }
 
         if (! $file || ! $file->isValid() || $file->hasMoved()) {
-            return $redirectAnalisa
-                ->with('error', 'File upload tidak valid.')
-                ->with('import_analisa_alert', $buildAlert('error', 'Import Gagal', 'File upload tidak valid.'));
+            session()->setFlashdata('import_analisa_alert', [
+                'icon' => 'error',
+                'title' => 'Import Gagal',
+                'text' => 'File upload tidak valid.',
+            ]);
+            return redirect()->to(site_url('C_P2TL/Analisa'));
         }
 
         $extension = strtolower((string) $file->getClientExtension());
         if (! in_array($extension, ['xls', 'xlsx'], true)) {
-            return $redirectAnalisa
-                ->with('error', 'Format file harus .xls atau .xlsx.')
-                ->with('import_analisa_alert', $buildAlert('error', 'Import Gagal', 'Format file harus .xls atau .xlsx.'));
+            session()->setFlashdata('import_analisa_alert', [
+                'icon' => 'error',
+                'title' => 'Import Gagal',
+                'text' => 'Format file harus .xls atau .xlsx.',
+            ]);
+            return redirect()->to(site_url('C_P2TL/Analisa'));
         }
 
         $tempName = $file->getRandomName();
@@ -1244,14 +1246,20 @@ class C_P2TL extends BaseController
                     . ', baris tidak valid: ' . $invalidRows
                     . ', unit berhasil diproses: ' . $processedUnits . '.';
 
-                return $redirectAnalisa
-                    ->with('error', 'Import analisa diproses sebagian.')
-                    ->with('import_analisa_alert', $buildAlert('warning', 'Import Sebagian', $text));
+                session()->setFlashdata('import_analisa_alert', [
+                    'icon' => 'warning',
+                    'title' => 'Import Sebagian',
+                    'text' => $text,
+                ]);
+            } else {
+                session()->setFlashdata('import_analisa_alert', [
+                    'icon' => 'error',
+                    'title' => 'Import Gagal',
+                    'text' => 'Tidak ada data yang berhasil diproses.',
+                ]);
             }
 
-            return $redirectAnalisa
-                ->with('error', 'Import analisa gagal diproses.')
-                ->with('import_analisa_alert', $buildAlert('error', 'Import Gagal', 'Tidak ada data yang berhasil diproses.'));
+            return redirect()->to(site_url('C_P2TL/Analisa'));
         } finally {
             if (is_file($targetPath)) {
                 @unlink($targetPath);
@@ -1259,9 +1267,12 @@ class C_P2TL extends BaseController
         }
 
         if ($insertedRows === 0) {
-            return $redirectAnalisa
-                ->with('error', 'Import analisa gagal diproses.')
-                ->with('import_analisa_alert', $buildAlert('error', 'Import Gagal', 'Tidak ada baris valid yang dapat diproses.'));
+            session()->setFlashdata('import_analisa_alert', [
+                'icon' => 'error',
+                'title' => 'Import Gagal',
+                'text' => 'Tidak ada baris valid yang dapat diproses.',
+            ]);
+            return redirect()->to(site_url('C_P2TL/Analisa'));
         }
 
         if ($invalidRows > 0) {
@@ -1269,16 +1280,22 @@ class C_P2TL extends BaseController
                 . 'Baris tersimpan: ' . $insertedRows
                 . ', baris tidak valid: ' . $invalidRows . '.';
 
-            return $redirectAnalisa
-                ->with('success', 'Import analisa diproses sebagian.')
-                ->with('import_analisa_alert', $buildAlert('warning', 'Import Sebagian', $text));
+            session()->setFlashdata('import_analisa_alert', [
+                'icon' => 'warning',
+                'title' => 'Import Sebagian',
+                'text' => $text,
+            ]);
+            return redirect()->to(site_url('C_P2TL/Analisa'));
         }
 
         $text = 'Seluruh data valid berhasil dimasukkan. Total baris: ' . $insertedRows . '.';
 
-        return $redirectAnalisa
-            ->with('success', 'Import analisa berhasil.')
-            ->with('import_analisa_alert', $buildAlert('success', 'Import Berhasil', $text));
+        session()->setFlashdata('import_analisa_alert', [
+            'icon' => 'success',
+            'title' => 'Import Berhasil',
+            'text' => $text,
+        ]);
+        return redirect()->to(site_url('C_P2TL/Analisa'));
     }
 
     public function downloadImportAnalisaTemplate(): ResponseInterface
