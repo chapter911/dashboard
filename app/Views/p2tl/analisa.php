@@ -174,7 +174,7 @@ body.modal-open {
                     </div>
                 </div>
                 <div class="modal-footer">
-                    <button type="button" class="btn btn-primary" data-bs-dismiss="modal">Batal</button>
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Batal</button>
                     <button type="submit" class="btn btn-primary">Import</button>
                 </div>
             </form>
@@ -232,6 +232,10 @@ body.modal-open {
         return;
     }
 
+    // Tutup loading alert dari submit sebelumnya
+    Swal.close();
+
+    // Tampilkan notifikasi hasil import
     Swal.fire({
         icon: alertData.icon || 'info',
         title: alertData.title || 'Informasi',
