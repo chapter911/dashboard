@@ -1421,4 +1421,76 @@ SQL;
             throw new \RuntimeException('Gagal menyimpan data analisa.');
         }
     }
+
+    /**
+     * Get latest temuan data for each IDPEL for export.
+     * Returns array keyed by IDPEL with tanggal_temuan (date) and temuan (type: P1/P2/P3/P4/K2).
+     *
+     * @param list<string> $idpels
+     *
+     * @return array<string, array{tanggal_temuan: string, temuan: string}>
+     */
+    public function getAnalisaTemuanDataByIdpels(array $idpels): array
+    {
+        if ($idpels === []) {
+            return [];
+        }
+
+        $cleanIdpels = [];
+        foreach ($idpels as $idpel) {
+            $normalized = trim((string) $idpel);
+            if ($normalized === '') {
+                continue;
+            }
+
+            $cleanIdpels[$normalized] = true;
+        }
+
+        if ($cleanIdpels === []) {
+            return [];
+        }
+
+        $idpelList = array_keys($cleanIdpels);
+        $placeholder = implode(',', array_fill(0, count($idpelList), '?'));
+
+        $sql = "SELECT
+                p.idpel,
+                MAX(p.tanggal_register) AS tanggal_temuan,
+                REPLACE(REPLACE(UPPER(TRIM(p.gol)), 'TEMUAN - ', ''), 'TEMUAN-', '') AS gol_normalized
+            FROM trn_p2tl p
+            WHERE p.idpel IN ({$placeholder})
+                AND p.tanggal_register IS NOT NULL
+                AND REPLACE(REPLACE(UPPER(TRIM(p.gol)), 'TEMUAN - ', ''), 'TEMUAN-', '') IN ('P1', 'P2', 'P3', 'P4', 'K2')
+            GROUP BY p.idpel, gol_normalized";
+
+        $rows = $this->db->query($sql, $idpelList)->getResultArray();
+
+        $result = [];
+        foreach ($rows as $row) {
+            $idpel = trim((string) ($row['idpel'] ?? ''));
+            if ($idpel === '') {
+                continue;
+            }
+
+            $tanggalStr = (string) ($row['tanggal_temuan'] ?? '');
+            $gol = (string) ($row['gol_normalized'] ?? '');
+
+            $tanggalFormatted = '-';
+            if ($tanggalStr !== '') {
+                $timestamp = strtotime($tanggalStr);
+                if ($timestamp !== false) {
+                    $tanggalFormatted = date('d-m-Y', $timestamp);
+                }
+            }
+
+            $temuanType = in_array($gol, ['P1', 'P2', 'P3', 'P4', 'K2'], true) ? $gol : '-';
+
+            $result[$idpel] = [
+                'tanggal_temuan' => $tanggalFormatted,
+                'temuan' => $temuanType,
+            ];
+        }
+
+        return $result;
+    }
 }

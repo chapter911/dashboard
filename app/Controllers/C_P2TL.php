@@ -953,9 +953,21 @@ class C_P2TL extends BaseController
         $userUnitId = session('unit_id') !== null ? (int) session('unit_id') : null;
         $rows = $this->p2tlModel->getAnalisaSummaryExport($year, $unit, $idpel, $isAdmin, $userUnitId, $temuanStatus);
 
+        // Fetch temuan data for all IDPELs in export
+        $idpels = [];
+        foreach ($rows as $row) {
+            $normalizedIdpel = trim((string) ($row['idpel'] ?? ''));
+            if ($normalizedIdpel === '') {
+                continue;
+            }
+
+            $idpels[] = $normalizedIdpel;
+        }
+        $temuanDataMap = $this->p2tlModel->getAnalisaTemuanDataByIdpels($idpels);
+
         $preTemuanHeaders = array_map(static fn(int $n): string => (string) $n, range(1, 24));
         $headers = array_merge(
-            ['NO', 'IDPEL', 'TARIF', 'DAYA'],
+            ['NO', 'IDPEL', 'TARIF', 'DAYA', 'TANGGAL TEMUAN', 'TEMUAN'],
             $preTemuanHeaders,
             ['JN RATA-RATA', 'RATA-RATA GOL', 'KONDISI', 'MIN', 'MAX', 'DLPD', 'COUNT EMIN']
         );
@@ -1020,6 +1032,8 @@ class C_P2TL extends BaseController
                 $idpelValue,
                 (string) ($row['tarif'] ?? ''),
                 (float) ($row['daya'] ?? 0),
+                (string) ($temuanDataMap[$idpelValue]['tanggal_temuan'] ?? '-'),
+                (string) ($temuanDataMap[$idpelValue]['temuan'] ?? '-'),
             ];
 
             $tailRow = [
@@ -1049,8 +1063,6 @@ class C_P2TL extends BaseController
         $sheet->setCellValue('B4', $unitLabel);
         $sheet->setCellValue('A5', 'IDPEL');
         $sheet->setCellValue('B5', $idpelFilter);
-        $sheet->setCellValue('A6', 'Status Temuan');
-        $sheet->setCellValue('B6', $temuanLabel);
         $sheet->setCellValue('D3', 'Diexport Oleh');
         $sheet->setCellValue('E3', $exportedBy);
         $sheet->setCellValue('D4', 'Waktu Export');
@@ -1060,8 +1072,9 @@ class C_P2TL extends BaseController
         $sheet->fromArray($headers, null, 'A' . $headerRow);
 
         // Force pre-temuan headers (1..24) as text so they are always visible in Excel.
+        // They start at column G because E/F are reserved for TANGGAL TEMUAN and TEMUAN.
         for ($i = 1; $i <= 24; $i++) {
-            $col = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex(4 + $i);
+            $col = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex(6 + $i);
             $sheet->setCellValueExplicit(
                 $col . $headerRow,
                 (string) $i,
@@ -1083,17 +1096,23 @@ class C_P2TL extends BaseController
 
         $lastDataRow = max($headerRow + 1, $rowNum - 1);
 
-        // Numeric display formatting for DAYA, kolom 1-24, JN rata-rata, rata-rata gol, MIN, MAX, COUNT EMIN.
-        $sheet->getStyle('D' . ($headerRow + 1) . ':AD' . $lastDataRow)
+        // Format DAYA column (numeric)
+        $sheet->getStyle('D' . ($headerRow + 1) . ':D' . $lastDataRow)
             ->getNumberFormat()
             ->setFormatCode('#,##0');
+        
+        // Format TANGGAL TEMUAN and TEMUAN columns (text)
+        $sheet->getStyle('E' . ($headerRow + 1) . ':F' . $lastDataRow)
+            ->getNumberFormat()
+            ->setFormatCode('@');
+        
+        // Format IDPEL column (text)
         $sheet->getStyle('B' . ($headerRow + 1) . ':B' . $lastDataRow)
             ->getNumberFormat()
             ->setFormatCode('@');
-        $sheet->getStyle('AF' . ($headerRow + 1) . ':AG' . $lastDataRow)
-            ->getNumberFormat()
-            ->setFormatCode('#,##0');
-        $sheet->getStyle('AI' . ($headerRow + 1) . ':AI' . $lastDataRow)
+        
+        // Format pre-temuan columns 1-24 and tail columns (numeric)
+        $sheet->getStyle('G' . ($headerRow + 1) . ':AK' . $lastDataRow)
             ->getNumberFormat()
             ->setFormatCode('#,##0');
 
@@ -1106,14 +1125,14 @@ class C_P2TL extends BaseController
             ->getStartColor()->setARGB('FF1F4E78');
         $sheet->getStyle('A1:' . $lastColumn . '1')->getFont()->getColor()->setARGB('FFFFFFFF');
 
-        $sheet->getStyle('A3:A6')->getFont()->setBold(true);
+        $sheet->getStyle('A3:A5')->getFont()->setBold(true);
         $sheet->getStyle('D3:D4')->getFont()->setBold(true);
 
         $sheet->getStyle('A' . $headerRow . ':' . $lastColumn . $headerRow)->getFont()->setBold(true);
         $sheet->getStyle('A' . $headerRow . ':' . $lastColumn . $headerRow)->getFill()
             ->setFillType(\PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID)
             ->getStartColor()->setARGB('FFD9E1F2');
-        $sheet->getStyle('E' . $headerRow . ':AB' . $headerRow)->getAlignment()
+        $sheet->getStyle('G' . $headerRow . ':AD' . $headerRow)->getAlignment()
             ->setHorizontal(\PhpOffice\PhpSpreadsheet\Style\Alignment::HORIZONTAL_CENTER);
 
         $tableRange = 'A' . $headerRow . ':' . $lastColumn . $lastDataRow;
