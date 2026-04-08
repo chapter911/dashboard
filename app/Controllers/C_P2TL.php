@@ -1143,16 +1143,14 @@ class C_P2TL extends BaseController
     public function importAnalisa(): RedirectResponse
     {
         $file = $this->request->getFile('file_import');
-        $year = (int) ($this->request->getPost('tahun') ?? date('Y'));
+        $year = (int) ($this->request->getPost('tahun') ?? 0);
+        if ($year < 2000 || $year > 2100) {
+            return redirect()->back()->with('error', 'Tahun harus dipilih.');
+        }
+
         $month = (int) ($this->request->getPost('bulan') ?? 0);
         if ($month < 1 || $month > 12) {
             return redirect()->back()->with('error', 'Bulan harus dipilih.');
-        }
-
-        $groupId = (int) (session('group_id') ?? 0);
-        $unitId = $groupId === 1 ? (int) ($this->request->getPost('unit_id') ?? 0) : (int) (session('unit_id') ?? 0);
-        if ($unitId <= 0) {
-            return redirect()->back()->with('error', 'Unit belum dipilih.');
         }
 
         if (! $file || ! $file->isValid() || $file->hasMoved()) {
@@ -1174,7 +1172,7 @@ class C_P2TL extends BaseController
             $period = sprintf('%04d-%02d-01', $year, $month);
             $username = (string) (session('username') ?? 'system');
 
-            $payload = [];
+            $payloadByUnit = [];
             foreach ($rows as $i => $r) {
                 if ($i === 0) {
                     continue;
@@ -1185,18 +1183,30 @@ class C_P2TL extends BaseController
                     continue;
                 }
 
-                $payload[] = [
+                $unitCode = substr($idpel, 0, 5);
+                if ($unitCode === false || strlen($unitCode) < 5 || ! ctype_digit($unitCode)) {
+                    continue;
+                }
+
+                $unitId = (int) $unitCode;
+                if ($unitId <= 0) {
+                    continue;
+                }
+
+                $payloadByUnit[$unitId][] = [
                     'idpel' => $idpel,
                     'tarif' => trim((string) ($r[1] ?? '')),
                     'daya' => $this->toNumber($r[2] ?? null),
                     'periode' => $period,
-                    'pemakaian_kwh' => $this->toNumber($r[3] ?? null),
+                    'pemakaian_kwh' => $this->toNullableNumber($r[3] ?? null),
                     'unit_id' => $unitId,
                     'created_by' => $username,
                 ];
             }
 
-            $this->p2tlModel->replaceAnalisaByPeriodUnit($period, $unitId, $payload);
+            foreach ($payloadByUnit as $unitId => $payload) {
+                $this->p2tlModel->replaceAnalisaByPeriodUnit($period, (int) $unitId, $payload);
+            }
         } catch (Throwable $e) {
             log_message('error', 'P2TL_IMPORT_ANALISA_FAILED: {message}', ['message' => $e->getMessage()]);
             return redirect()->back()->with('error', 'Import analisa gagal diproses.');
@@ -1217,15 +1227,39 @@ class C_P2TL extends BaseController
 
         $headers = ['IDPEL', 'TARIF', 'DAYA', 'PEMAKAIAN_KWH'];
         $sheet->fromArray($headers, null, 'A1');
-
-        // Contoh 1 baris agar user memahami format kolom import.
         $sheet->fromArray(['12345678901', 'R1', 1300, 245], null, 'A2');
+        $sheet->fromArray(['522101234567', 'B2', 5500, 1180], null, 'A3');
 
         $sheet->getStyle('A1:D1')->getFont()->setBold(true);
+        $sheet->getStyle('A1:D1')->getFill()
+            ->setFillType(\PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID)
+            ->getStartColor()->setARGB('FFD9E1F2');
+
+        // IDPEL dipaksa text agar tidak berubah scientific notation di Excel.
+        $sheet->getStyle('A2:A2000')->getNumberFormat()->setFormatCode('@');
+        $sheet->getStyle('C2:D2000')->getNumberFormat()->setFormatCode('#,##0');
 
         foreach (range('A', 'D') as $col) {
             $sheet->getColumnDimension($col)->setAutoSize(true);
         }
+
+        $sheet->setCellValue('A5', 'Catatan: Hapus baris contoh (baris 2-3) sebelum upload data final.');
+        $sheet->mergeCells('A5:D5');
+        $sheet->getStyle('A5')->getFont()->setItalic(true);
+
+        $guideSheet = $spreadsheet->createSheet();
+        $guideSheet->setTitle('Petunjuk');
+        $guideSheet->fromArray([
+            ['Format Import Analisa P2TL'],
+            ['1. Gunakan sheet "Template Import Analisa" untuk isi data.'],
+            ['2. Kolom wajib: IDPEL, TARIF, DAYA, PEMAKAIAN_KWH.'],
+            ['3. IDPEL wajib terisi dan disarankan format text agar digit tidak hilang.'],
+            ['4. DAYA dan PEMAKAIAN_KWH harus angka (tanpa satuan).'],
+            ['5. Tahun, Bulan, dan Unit dipilih dari form saat proses import.'],
+            ['6. File yang didukung: .xlsx atau .xls.'],
+        ], null, 'A1');
+        $guideSheet->getStyle('A1')->getFont()->setBold(true)->setSize(12);
+        $guideSheet->getColumnDimension('A')->setWidth(100);
 
         $writer = new \PhpOffice\PhpSpreadsheet\Writer\Xlsx($spreadsheet);
         ob_start();
@@ -1609,6 +1643,25 @@ class C_P2TL extends BaseController
         }
 
         return is_numeric($value) ? (float) $value : 0.0;
+    }
+
+    private function toNullableNumber(mixed $value): ?float
+    {
+        if (is_string($value)) {
+            $normalized = trim($value);
+            if ($normalized === '') {
+                return null;
+            }
+
+            $normalized = str_replace([' ', ','], ['', '.'], $normalized);
+            return is_numeric($normalized) ? (float) $normalized : null;
+        }
+
+        if ($value === null || $value === '') {
+            return null;
+        }
+
+        return is_numeric($value) ? (float) $value : null;
     }
 
     private function normalizeDateCell(mixed $value): ?string

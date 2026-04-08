@@ -130,28 +130,46 @@ body.modal-open {
                     <div class="row g-3">
                         <div class="col-md-6">
                             <label class="form-label">Tahun</label>
-                            <input type="number" class="form-control" name="tahun" value="<?= (int) ($currentYear ?? date('Y')) ?>" required>
+                            <select class="form-select" name="tahun" required>
+                                <option value="" selected>- pilih tahun -</option>
+                                <?php foreach ($years as $year): ?>
+                                    <option value="<?= $year ?>"><?= $year ?></option>
+                                <?php endforeach; ?>
+                            </select>
                         </div>
                         <div class="col-md-6">
                             <label class="form-label">Bulan</label>
                             <select class="form-select" name="bulan" required>
-                                <?php for ($m = 1; $m <= 12; $m++): ?>
-                                    <option value="<?= $m ?>" <?= $m === (int) date('n') ? 'selected' : '' ?>><?= $m ?></option>
-                                <?php endfor; ?>
-                            </select>
-                        </div>
-                        <div class="col-md-12">
-                            <label class="form-label">Unit</label>
-                            <select class="form-select" name="unit_id">
-                                <option value="">Ikuti Unit User</option>
-                                <?php foreach (($units ?? []) as $u): ?>
-                                    <option value="<?= (int) ($u['unit_id'] ?? 0) ?>"><?= esc($u['unit_name'] ?? '-') ?></option>
+                                <option value="" selected>- pilih bulan -</option>
+                                <?php
+                                $namaBulan = [
+                                    1 => 'Januari',
+                                    2 => 'Februari',
+                                    3 => 'Maret',
+                                    4 => 'April',
+                                    5 => 'Mei',
+                                    6 => 'Juni',
+                                    7 => 'Juli',
+                                    8 => 'Agustus',
+                                    9 => 'September',
+                                    10 => 'Oktober',
+                                    11 => 'November',
+                                    12 => 'Desember',
+                                ];
+                                ?>
+                                <?php foreach ($namaBulan as $nomor => $label): ?>
+                                    <option value="<?= $nomor ?>"><?= esc($label) ?></option>
                                 <?php endforeach; ?>
                             </select>
                         </div>
                         <div class="col-md-12">
                             <label class="form-label">File (xlsx/xls)</label>
                             <input type="file" class="form-control" name="file_import" accept=".xlsx,.xls" required>
+                            <div class="form-text mt-1">
+                                Format kolom: <strong>IDPEL, TARIF, DAYA, PEMAKAIAN_KWH</strong>.
+                                Unit otomatis diambil dari 5 karakter awal IDPEL.
+                                <a href="<?= site_url('C_P2TL/downloadImportAnalisaTemplate') ?>" class="ms-1">Download Template Excel</a>
+                            </div>
                         </div>
                     </div>
                 </div>
