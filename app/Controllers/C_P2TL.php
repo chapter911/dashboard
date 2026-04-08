@@ -1144,28 +1144,48 @@ class C_P2TL extends BaseController
     {
         $redirectAnalisa = redirect()->to(site_url('C_P2TL/Analisa'));
 
+        $buildAlert = static function (string $icon, string $title, string $text): array {
+            return [
+                'icon' => $icon,
+                'title' => $title,
+                'text' => $text,
+            ];
+        };
+
         $file = $this->request->getFile('file_import');
         $year = (int) ($this->request->getPost('tahun') ?? 0);
         if ($year < 2000 || $year > 2100) {
-            return $redirectAnalisa->with('error', 'Tahun harus dipilih.');
+            return $redirectAnalisa
+                ->with('error', 'Tahun harus dipilih.')
+                ->with('import_analisa_alert', $buildAlert('error', 'Import Gagal', 'Tahun harus dipilih.'));
         }
 
         $month = (int) ($this->request->getPost('bulan') ?? 0);
         if ($month < 1 || $month > 12) {
-            return $redirectAnalisa->with('error', 'Bulan harus dipilih.');
+            return $redirectAnalisa
+                ->with('error', 'Bulan harus dipilih.')
+                ->with('import_analisa_alert', $buildAlert('error', 'Import Gagal', 'Bulan harus dipilih.'));
         }
 
         if (! $file || ! $file->isValid() || $file->hasMoved()) {
-            return $redirectAnalisa->with('error', 'File upload tidak valid.');
+            return $redirectAnalisa
+                ->with('error', 'File upload tidak valid.')
+                ->with('import_analisa_alert', $buildAlert('error', 'Import Gagal', 'File upload tidak valid.'));
         }
 
         $extension = strtolower((string) $file->getClientExtension());
         if (! in_array($extension, ['xls', 'xlsx'], true)) {
-            return $redirectAnalisa->with('error', 'Format file harus .xls atau .xlsx.');
+            return $redirectAnalisa
+                ->with('error', 'Format file harus .xls atau .xlsx.')
+                ->with('import_analisa_alert', $buildAlert('error', 'Import Gagal', 'Format file harus .xls atau .xlsx.'));
         }
 
         $tempName = $file->getRandomName();
         $targetPath = WRITEPATH . 'uploads/' . $tempName;
+        $totalRows = 0;
+        $invalidRows = 0;
+        $insertedRows = 0;
+        $processedUnits = 0;
 
         try {
             $file->move(WRITEPATH . 'uploads', $tempName);
@@ -1185,13 +1205,17 @@ class C_P2TL extends BaseController
                     continue;
                 }
 
+                $totalRows++;
+
                 $unitCode = substr($idpel, 0, 5);
                 if ($unitCode === false || strlen($unitCode) < 5 || ! ctype_digit($unitCode)) {
+                    $invalidRows++;
                     continue;
                 }
 
                 $unitId = (int) $unitCode;
                 if ($unitId <= 0) {
+                    $invalidRows++;
                     continue;
                 }
 
@@ -1208,17 +1232,53 @@ class C_P2TL extends BaseController
 
             foreach ($payloadByUnit as $unitId => $payload) {
                 $this->p2tlModel->replaceAnalisaByPeriodUnit($period, (int) $unitId, $payload);
+                $processedUnits++;
+                $insertedRows += count($payload);
             }
         } catch (Throwable $e) {
             log_message('error', 'P2TL_IMPORT_ANALISA_FAILED: {message}', ['message' => $e->getMessage()]);
-            return $redirectAnalisa->with('error', 'Import analisa gagal diproses.');
+
+            if ($insertedRows > 0 || $processedUnits > 0) {
+                $text = 'Sebagian data berhasil diproses sebelum terjadi error. '
+                    . 'Baris tersimpan: ' . $insertedRows
+                    . ', baris tidak valid: ' . $invalidRows
+                    . ', unit berhasil diproses: ' . $processedUnits . '.';
+
+                return $redirectAnalisa
+                    ->with('error', 'Import analisa diproses sebagian.')
+                    ->with('import_analisa_alert', $buildAlert('warning', 'Import Sebagian', $text));
+            }
+
+            return $redirectAnalisa
+                ->with('error', 'Import analisa gagal diproses.')
+                ->with('import_analisa_alert', $buildAlert('error', 'Import Gagal', 'Tidak ada data yang berhasil diproses.'));
         } finally {
             if (is_file($targetPath)) {
                 @unlink($targetPath);
             }
         }
 
-        return $redirectAnalisa->with('success', 'Import analisa berhasil.');
+        if ($insertedRows === 0) {
+            return $redirectAnalisa
+                ->with('error', 'Import analisa gagal diproses.')
+                ->with('import_analisa_alert', $buildAlert('error', 'Import Gagal', 'Tidak ada baris valid yang dapat diproses.'));
+        }
+
+        if ($invalidRows > 0) {
+            $text = 'Data masuk sebagian. '
+                . 'Baris tersimpan: ' . $insertedRows
+                . ', baris tidak valid: ' . $invalidRows . '.';
+
+            return $redirectAnalisa
+                ->with('success', 'Import analisa diproses sebagian.')
+                ->with('import_analisa_alert', $buildAlert('warning', 'Import Sebagian', $text));
+        }
+
+        $text = 'Seluruh data valid berhasil dimasukkan. Total baris: ' . $insertedRows . '.';
+
+        return $redirectAnalisa
+            ->with('success', 'Import analisa berhasil.')
+            ->with('import_analisa_alert', $buildAlert('success', 'Import Berhasil', $text));
     }
 
     public function downloadImportAnalisaTemplate(): ResponseInterface

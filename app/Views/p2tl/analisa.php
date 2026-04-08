@@ -224,6 +224,21 @@ body.modal-open {
 <?= $this->endSection() ?>
 
 <?= $this->section('scripts') ?>
+<?php $importAnalisaAlert = session()->getFlashdata('import_analisa_alert'); ?>
+<script>
+(function () {
+    var alertData = <?= json_encode($importAnalisaAlert, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>;
+    if (!alertData || typeof Swal === 'undefined') {
+        return;
+    }
+
+    Swal.fire({
+        icon: alertData.icon || 'info',
+        title: alertData.title || 'Informasi',
+        text: alertData.text || ''
+    });
+})();
+</script>
 <script>
 (function () {
     var datatableCssHref = '<?= base_url('assets/vendor/libs/datatables-bs5/datatables.bootstrap5.css') ?>';
