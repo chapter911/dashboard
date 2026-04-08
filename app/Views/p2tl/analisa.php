@@ -221,6 +221,29 @@ body.modal-open {
         </div>
     </div>
 </div>
+
+<div class="modal fade" id="modalImportResult" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="importResultTitle">Hasil Import</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div class="d-flex align-items-start gap-3">
+                    <div id="importResultIcon" style="font-size: 2.5rem;"></div>
+                    <div id="importResultContent" class="flex-grow-1">
+                        <p id="importResultText" class="mb-0"></p>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-primary" data-bs-dismiss="modal">OK</button>
+            </div>
+        </div>
+    </div>
+</div>
+
 <?= $this->endSection() ?>
 
 <?= $this->section('scripts') ?>
@@ -228,19 +251,52 @@ body.modal-open {
 <script>
 (function () {
     var alertData = <?= json_encode($importAnalisaAlert, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>;
-    if (!alertData || typeof Swal === 'undefined') {
+    if (!alertData || typeof bootstrap === 'undefined') {
         return;
     }
 
     // Tutup loading alert dari submit sebelumnya
-    Swal.close();
+    if (typeof Swal !== 'undefined') {
+        Swal.close();
+    }
 
-    // Tampilkan notifikasi hasil import
-    Swal.fire({
-        icon: alertData.icon || 'info',
-        title: alertData.title || 'Informasi',
-        text: alertData.text || ''
-    });
+    var icons = {
+        'success': '✓',
+        'error': '✕',
+        'warning': '⚠',
+        'info': 'ℹ'
+    };
+
+    var iconColors = {
+        'success': 'text-success',
+        'error': 'text-danger',
+        'warning': 'text-warning',
+        'info': 'text-info'
+    };
+
+    var icon = alertData.icon || 'info';
+    var iconEl = document.getElementById('importResultIcon');
+    var titleEl = document.getElementById('importResultTitle');
+    var textEl = document.getElementById('importResultText');
+
+    if (iconEl) {
+        iconEl.textContent = icons[icon] || 'ℹ';
+        iconEl.className = 'fw-bold ' + (iconColors[icon] || 'text-info');
+    }
+
+    if (titleEl) {
+        titleEl.textContent = alertData.title || 'Informasi';
+    }
+
+    if (textEl) {
+        textEl.textContent = alertData.text || '';
+    }
+
+    var modalEl = document.getElementById('modalImportResult');
+    if (modalEl) {
+        var modal = new bootstrap.Modal(modalEl);
+        modal.show();
+    }
 })();
 </script>
 <script>
