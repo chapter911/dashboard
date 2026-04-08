@@ -1257,13 +1257,13 @@ SQL;
     /**
      * @return list<array<string,mixed>>
      */
-    public function getAnalisaSummaryExport(int $year, string $unit = '*', string $idpel = '', bool $isAdmin = true, ?int $userUnitId = null, string $temuanStatus = '*'): array
+    public function getAnalisaSummaryExport(int $year, string $unit = '*', string $idpel = '', bool $isAdmin = true, ?int $userUnitId = null): array
     {
         $rows = $this->getAnalisaSummaryDatatable([
             'tahun' => $year,
             'unit' => $unit,
             'idpel' => $idpel,
-            'temuan_status' => $temuanStatus,
+            'temuan_status' => '*',
         ], 0, 1000000, null, $isAdmin, $userUnitId);
 
         return $rows['rows'];
